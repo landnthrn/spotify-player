@@ -42,6 +42,7 @@ impl std::fmt::Debug for ImageRenderInfo {
 pub struct UIState {
     pub is_running: bool,
     pub theme: config::Theme,
+    pub visualizer_preset: config::VisualizerPreset,
     pub input_key_sequence: key::KeySequence,
     pub orientation: ui::Orientation,
 
@@ -114,6 +115,7 @@ impl Default for UIState {
         Self {
             is_running: true,
             theme: Theme::default(),
+            visualizer_preset: config::VisualizerPreset::default(),
             input_key_sequence: key::KeySequence { keys: vec![] },
             orientation: match crossterm::terminal::size() {
                 Ok((columns, rows)) => ui::Orientation::from_size(columns, rows),

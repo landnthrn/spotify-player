@@ -48,6 +48,10 @@ impl State {
             // update the UI's theme based on the `theme` config option
             ui.theme = theme;
         }
+        #[cfg(feature = "streaming")]
+        {
+            ui.visualizer_preset = configs.active_visualizer_preset();
+        }
 
         let app_data = AppData::new(&configs.cache_folder);
 

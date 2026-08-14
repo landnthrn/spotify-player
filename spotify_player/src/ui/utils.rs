@@ -50,6 +50,15 @@ pub fn construct_and_render_block(
     inner_rect
 }
 
+pub fn inset_rect(rect: Rect, left: u16, right: u16, top: u16, bottom: u16) -> Rect {
+    let x = rect.x.saturating_add(left.min(rect.width));
+    let y = rect.y.saturating_add(top.min(rect.height));
+    let width = rect.width.saturating_sub(left.saturating_add(right));
+    let height = rect.height.saturating_sub(top.saturating_add(bottom));
+
+    Rect::new(x, y, width, height)
+}
+
 /// Construct a generic list widget
 pub fn construct_list_widget<'a>(
     theme: &config::Theme,
@@ -109,6 +118,7 @@ pub fn render_list_window(
     state: &mut ListState,
 ) {
     adjust_list_state(state, len);
+    let rect = inset_rect(rect, 1, 1, 0, 0);
     frame.render_stateful_widget(widget, rect, state);
 }
 
@@ -131,6 +141,7 @@ pub fn render_table_window(
     state: &mut TableState,
 ) {
     adjust_table_state(state, len);
+    let rect = inset_rect(rect, 1, 1, 0, 0);
     frame.render_stateful_widget(widget, rect, state);
 }
 

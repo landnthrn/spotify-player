@@ -5,6 +5,7 @@
 - [General](#general)
   - [Notes](#notes)
   - [Media control](#media-control)
+  - [Visualizer Config](#visualizer-config)
   - [Player event hook command](#player-event-hook-command)
   - [Client id command](#client-id-command)
   - [Device configurations](#device-configurations)
@@ -13,6 +14,7 @@
   - [Use script to add theme](#use-script-to-add-theme)
   - [Palette](#palette)
   - [Component Styles](#component-styles)
+  - [Visualizer Colors](#visualizer-colors)
 - [Keymaps](#keymaps)
 
 Configuration files are located in the application's configuration directory, which defaults to `$HOME/.config/spotify-player`.
@@ -82,12 +84,59 @@ spotify_player -o device.volume=80 -o theme=dracula
 - Setting a positive `app_refresh_duration_in_ms` increases API usage and may trigger rate limits. By default, `playback_refresh_duration_in_ms=0` refreshes playback only on events or commands.
 - `enable_streaming` accepts `Always`, `Never`, or `DaemonOnly`. For backward compatibility, `true`/`false` are also accepted.
 - `border_type`, `progress_bar_type`, and `progress_bar_position` accept only the values listed in the table above.
+- Visualizer tuning now lives in `visualizer.toml`, not `app.toml`.
+- `visualizer.toml` stores the active `behavior`, `look`, and `placement` names plus the active visualizer `mode` and `direction`.
+- Placement choices are built into the app, like `visualizer_mode` and `visualizer_direction`, and are not stored as `[[placement_presets]]` blocks anymore.
+- Older per-setting visualizer keys in `app.toml` still parse as a fallback for compatibility, but new setups should use `visualizer.toml`.
 - `explicit_icon` can be set to any Unicode character or an empty string to disable explicit markers.
 - `cover_img_length = 0` (the default) auto-derives the cover's column count from the terminal's cell aspect ratio. Set a non-zero `cover_img_length` to size the box manually.
 
 #### Media control
 
 Media control (`enable_media_control`) is enabled by default on Linux but disabled on macOS and Windows. On these platforms, the OS requires an open window to receive media events, which may cause the terminal to lose focus on startup.
+
+### Visualizer Config
+
+Visualizer settings are loaded from `$HOME/.config/spotify-player/visualizer.toml`.
+
+Keep the visualizer on in `app.toml`:
+
+```toml
+enable_audio_visualization = true
+```
+
+Then place the active selections plus the behavior/look preset blocks in `visualizer.toml`:
+
+```toml
+[active]
+behavior_preset = "balanced"
+look_preset = "boxed"
+placement_preset = "vislzr_b_bar_b_info_tr"
+visualizer_mode = "left_bass"
+visualizer_direction = "up"
+
+[[behavior_presets]]
+name = "balanced"
+visualizer_frequency_bias = 1.0
+visualizer_sensitivity = 1.0
+visualizer_rise_speed = 1.0
+visualizer_fall_speed = 1.0
+visualizer_low_min_max_length = [0.0, 0.33333334]
+visualizer_mid_min_max_length = [0.33333334, 0.6666667]
+visualizer_high_min_max_length = [0.6666667, 0.85]
+visualizer_peak_min_max_length = [0.85, 1.0]
+visualizer_mid_threshold = 0.33333334
+visualizer_high_threshold = 0.6666667
+visualizer_peak_threshold = 0.85
+
+[[look_presets]]
+name = "boxed"
+visualizer_bar_thickness = 1
+visualizer_bar_gap = 0
+visualizer_center_offset = 0
+visualizer_border = true
+visualizer_show_on_pause = true
+```
 
 ### Player event hook command
 
@@ -183,6 +232,7 @@ A theme consists of:
 - `name` (required): Theme name.
 - `palette` (optional): Color palette.
 - `component_style` (optional): Styles for UI components.
+- `visualizer` (optional): Visualizer gradient colors.
 
 Omitted `palette` values use terminal colors. Omitted `component_style` values use default styles.
 
@@ -254,6 +304,26 @@ like = {}
 lyrics_played = { modifiers = ["Dim"] }
 lyrics_playing = { fg = "Green", modifiers = ["Bold"] }
 ```
+
+### Visualizer Colors
+
+You can customize the visualizer gradient with a dedicated `[themes.visualizer]` table:
+
+```toml
+[[themes]]
+name = "my_theme"
+
+[themes.visualizer]
+low = "#6d5dfc"
+mid = "#7c6dff"
+high = "#9b5cff"
+peak = "#b084ff"
+```
+
+Accepted values are the same as other theme colors:
+
+- named colors such as `Blue`, `BrightBlue`, `Magenta`, `BrightMagenta`
+- hex values such as `#6d5dfc`
 
 #### Accepted Colors
 

@@ -4,6 +4,109 @@ use anyhow::Result;
 use ratatui::style;
 use serde::Deserialize;
 
+const DEFAULT_THEME_CONFIG_TOML: &str = r##"[[themes]]
+name = "default"
+
+[[themes]]
+name = "downpour"
+
+[themes.palette]
+background = "#10101a"
+foreground = "#d9d7ff"
+black = "#10101a"
+red = "#ff5c8a"
+green = "#58f0c3"
+yellow = "#ffd166"
+blue = "#6d5dfc"
+magenta = "#9b5cff"
+cyan = "#7c6dff"
+white = "#d9d7ff"
+bright_black = "#3a3a50"
+bright_red = "#ff7aa8"
+bright_green = "#7affd7"
+bright_yellow = "#ffe08a"
+bright_blue = "#7c6dff"
+bright_magenta = "#b084ff"
+bright_cyan = "#b084ff"
+bright_white = "#ffffff"
+
+[themes.component_style]
+block_title = { fg = "#b084ff", modifiers = ["Bold"] }
+border = { fg = "#6d5dfc" }
+playback_status = { fg = "#7c6dff", modifiers = ["Bold"] }
+playback_track = { fg = "#b084ff", modifiers = ["Bold"] }
+playback_artists = { fg = "#7c6dff", modifiers = ["Bold"] }
+playback_album = { fg = "#9b5cff" }
+playback_genres = { fg = "#7b789c", modifiers = ["Italic"] }
+playback_metadata = { fg = "#8f8bb8" }
+playback_progress_bar = { fg = "#9b5cff", bg = "#27273a" }
+playback_progress_bar_unfilled = { bg = "#27273a" }
+current_playing = { fg = "#b084ff", modifiers = ["Bold"] }
+page_desc = { fg = "#b084ff", modifiers = ["Bold"] }
+playlist_desc = { fg = "#8f8bb8", modifiers = ["Dim"] }
+table_header = { fg = "#7c6dff", modifiers = ["Bold"] }
+selection = { bg = "#2d2450", fg = "#ffffff", modifiers = ["Bold"] }
+secondary_row = { fg = "#aaa6d8" }
+like = { fg = "#b084ff", modifiers = ["Bold"] }
+lyrics_played = { fg = "#6f6f95", modifiers = ["Dim"] }
+lyrics_playing = { fg = "#9b5cff", modifiers = ["Bold"] }
+
+[themes.visualizer]
+low = "#6d5dfc"
+mid = "#7c6dff"
+high = "#9b5cff"
+peak = "#b084ff"
+
+[[themes]]
+name = "downpour-transparent"
+
+[themes.palette]
+foreground = "#d9d7ff"
+black = "#10101a"
+red = "#ff5c8a"
+green = "#58f0c3"
+yellow = "#ffd166"
+blue = "#6d5dfc"
+magenta = "#9b5cff"
+cyan = "#7c6dff"
+white = "#d9d7ff"
+bright_black = "#3a3a50"
+bright_red = "#ff7aa8"
+bright_green = "#7affd7"
+bright_yellow = "#ffe08a"
+bright_blue = "#7c6dff"
+bright_magenta = "#b084ff"
+bright_cyan = "#b084ff"
+bright_white = "#ffffff"
+
+[themes.component_style]
+block_title = { fg = "#b084ff", modifiers = ["Bold"] }
+border = { fg = "#6d5dfc" }
+playback_status = { fg = "#7c6dff", modifiers = ["Bold"] }
+playback_track = { fg = "#b084ff", modifiers = ["Bold"] }
+playback_artists = { fg = "#7c6dff", modifiers = ["Bold"] }
+playback_album = { fg = "#9b5cff" }
+playback_genres = { fg = "#7b789c", modifiers = ["Italic"] }
+playback_metadata = { fg = "#8f8bb8" }
+playback_progress_bar = { fg = "#9b5cff" }
+playback_progress_bar_unfilled = {}
+current_playing = { fg = "#b084ff", modifiers = ["Bold"] }
+page_desc = { fg = "#b084ff", modifiers = ["Bold"] }
+playlist_desc = { fg = "#8f8bb8", modifiers = ["Dim"] }
+table_header = { fg = "#7c6dff", modifiers = ["Bold"] }
+selection = { fg = "#ffffff", modifiers = ["Bold"] }
+secondary_row = { fg = "#aaa6d8" }
+like = { fg = "#b084ff", modifiers = ["Bold"] }
+lyrics_played = { fg = "#6f6f95", modifiers = ["Dim"] }
+lyrics_playing = { fg = "#9b5cff", modifiers = ["Bold"] }
+
+[themes.visualizer]
+low = "#6d5dfc"
+mid = "#7c6dff"
+high = "#9b5cff"
+peak = "#b084ff"
+"##;
+
 #[derive(Clone, Debug, Deserialize)]
 /// Application theme configurations.
 pub struct ThemeConfig {
@@ -18,6 +121,8 @@ pub struct Theme {
     palette: Palette,
     #[serde(default)]
     component_style: ComponentStyle,
+    #[serde(default)]
+    visualizer: VisualizerStyle,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -83,6 +188,14 @@ struct ComponentStyle {
     lyrics_playing: Option<Style>,
 }
 
+#[derive(Clone, Debug, Default, Deserialize)]
+struct VisualizerStyle {
+    low: Option<StyleColor>,
+    mid: Option<StyleColor>,
+    high: Option<StyleColor>,
+    peak: Option<StyleColor>,
+}
+
 #[derive(Default, Clone, Debug, Deserialize)]
 struct Style {
     fg: Option<StyleColor>,
@@ -136,6 +249,11 @@ impl ThemeConfig {
     }
 
     pub fn new(path: &std::path::Path) -> Result<Self> {
+        let file_path = path.join(super::THEME_CONFIG_FILE);
+        if !file_path.exists() {
+            std::fs::write(&file_path, DEFAULT_THEME_CONFIG_TOML)?;
+        }
+
         let mut config = Self::default();
         config.parse_config_file(path)?;
 
@@ -153,15 +271,7 @@ impl ThemeConfig {
                 );
             }
             Ok(content) => {
-                let config = toml::from_str::<Self>(&content)?;
-
-                // merge user-defined themes and the application default themes
-                // Skip any theme whose name conflicts with already existed theme in the current application's themes
-                config.themes.into_iter().for_each(|theme| {
-                    if !self.themes.iter().any(|t| t.name == theme.name) {
-                        self.themes.push(theme);
-                    }
-                });
+                *self = toml::from_str::<Self>(&content)?;
             }
         }
         Ok(())
@@ -292,6 +402,27 @@ impl Theme {
             .as_ref()
             .unwrap_or(&Style::default().bg(StyleColor::BrightBlack))
             .style(&self.palette)
+    }
+
+    pub fn visualizer_colors(&self) -> [style::Color; 4] {
+        [
+            self.visualizer
+                .low
+                .unwrap_or(StyleColor::Blue)
+                .color(&self.palette),
+            self.visualizer
+                .mid
+                .unwrap_or(StyleColor::BrightBlue)
+                .color(&self.palette),
+            self.visualizer
+                .high
+                .unwrap_or(StyleColor::Magenta)
+                .color(&self.palette),
+            self.visualizer
+                .peak
+                .unwrap_or(StyleColor::BrightMagenta)
+                .color(&self.palette),
+        ]
     }
 
     pub fn current_playing(&self) -> style::Style {
@@ -573,9 +704,7 @@ impl From<style::Color> for Color {
 
 impl Default for ThemeConfig {
     fn default() -> Self {
-        Self {
-            themes: vec![Theme::default()],
-        }
+        toml::from_str(DEFAULT_THEME_CONFIG_TOML).expect("valid built-in theme config")
     }
 }
 
@@ -585,6 +714,7 @@ impl Default for Theme {
             name: "default".to_owned(),
             palette: Palette::default(),
             component_style: ComponentStyle::default(),
+            visualizer: VisualizerStyle::default(),
         }
     }
 }

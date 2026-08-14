@@ -1,11 +1,13 @@
 mod keymap;
 mod theme;
+mod visualizer_preset;
 
 const DEFAULT_CONFIG_FOLDER: &str = ".config/spotify-player";
 const DEFAULT_CACHE_FOLDER: &str = ".cache/spotify-player";
 const APP_CONFIG_FILE: &str = "app.toml";
 const THEME_CONFIG_FILE: &str = "theme.toml";
 const KEYMAP_CONFIG_FILE: &str = "keymap.toml";
+const VISUALIZER_CONFIG_FILE: &str = "visualizer.toml";
 
 use anyhow::{anyhow, Result};
 use config_parser2::{config_parser_impl, ConfigParse, ConfigParser};
@@ -19,9 +21,8 @@ use std::{
 
 use anyhow::Context;
 use keymap::KeymapConfig;
-use theme::ThemeConfig;
-
-pub use theme::Theme;
+pub use theme::{Theme, ThemeConfig};
+pub use visualizer_preset::{VisualizerConfigFile, VisualizerPreset};
 
 use crate::auth::{NCSPOT_CLIENT_ID, SPOTIFY_CLIENT_ID};
 
@@ -32,6 +33,7 @@ pub struct Configs {
     pub app_config: AppConfig,
     pub keymap_config: KeymapConfig,
     pub theme_config: ThemeConfig,
+    pub visualizer_config: VisualizerConfigFile,
     pub cache_folder: std::path::PathBuf,
 }
 
@@ -41,8 +43,24 @@ impl Configs {
             app_config: AppConfig::new(config_folder)?,
             keymap_config: KeymapConfig::new(config_folder)?,
             theme_config: ThemeConfig::new(config_folder)?,
+            visualizer_config: VisualizerConfigFile::new(config_folder)?,
             cache_folder: cache_folder.to_path_buf(),
         })
+    }
+
+    pub fn active_visualizer_preset(&self) -> VisualizerPreset {
+        if self.visualizer_config.loaded_from_file {
+            self.visualizer_config.active_visualizer_preset()
+        } else {
+            #[cfg(feature = "streaming")]
+            {
+                self.app_config.legacy_visualizer_preset()
+            }
+            #[cfg(not(feature = "streaming"))]
+            {
+                VisualizerPreset::default()
+            }
+        }
     }
 }
 
@@ -113,6 +131,71 @@ pub struct AppConfig {
 
     #[cfg(feature = "streaming")]
     pub enable_audio_visualization: bool,
+    #[cfg(feature = "streaming")]
+    #[serde(skip_serializing)]
+    pub visualizer_preset: String,
+    #[cfg(feature = "streaming")]
+    #[serde(skip_serializing)]
+    pub visualizer_mode: VisualizerMode,
+    #[cfg(feature = "streaming")]
+    #[serde(skip_serializing)]
+    pub visualizer_direction: VisualizerDirection,
+    #[cfg(feature = "streaming")]
+    #[serde(skip_serializing)]
+    pub visualizer_frequency_bias: f32,
+    #[cfg(feature = "streaming")]
+    #[serde(skip_serializing)]
+    pub visualizer_sensitivity: f32,
+    #[cfg(feature = "streaming")]
+    #[serde(skip_serializing)]
+    pub visualizer_rise_speed: f32,
+    #[cfg(feature = "streaming")]
+    #[serde(skip_serializing)]
+    pub visualizer_fall_speed: f32,
+    #[cfg(feature = "streaming")]
+    #[serde(alias = "visualizer_bar_width")]
+    #[serde(skip_serializing)]
+    pub visualizer_bar_thickness: u16,
+    #[cfg(feature = "streaming")]
+    #[serde(skip_serializing)]
+    pub visualizer_bar_gap: u16,
+    #[cfg(feature = "streaming")]
+    #[serde(skip_serializing)]
+    pub visualizer_center_offset: i16,
+    #[cfg(feature = "streaming")]
+    #[serde(skip_serializing)]
+    pub visualizer_low_min_max_length: VisualizerLengthRange,
+    #[cfg(feature = "streaming")]
+    #[serde(skip_serializing)]
+    pub visualizer_mid_min_max_length: VisualizerLengthRange,
+    #[cfg(feature = "streaming")]
+    #[serde(skip_serializing)]
+    pub visualizer_high_min_max_length: VisualizerLengthRange,
+    #[cfg(feature = "streaming")]
+    #[serde(skip_serializing)]
+    pub visualizer_peak_min_max_length: VisualizerLengthRange,
+    #[cfg(feature = "streaming")]
+    #[serde(skip_serializing)]
+    pub visualizer_mid_threshold: f32,
+    #[cfg(feature = "streaming")]
+    #[serde(skip_serializing)]
+    pub visualizer_high_threshold: f32,
+    #[cfg(feature = "streaming")]
+    #[serde(skip_serializing)]
+    pub visualizer_peak_threshold: f32,
+    #[cfg(feature = "streaming")]
+    #[serde(skip_serializing)]
+    pub visualizer_placement: VisualizerPlacement,
+    #[cfg(feature = "streaming")]
+    #[serde(skip_serializing)]
+    pub visualizer_border: bool,
+    #[cfg(feature = "streaming")]
+    #[serde(skip_serializing)]
+    pub visualizer_show_on_pause: bool,
+
+    #[cfg(feature = "streaming")]
+    #[serde(skip_serializing)]
+    pub progress_bar_placement: ProgressBarPlacement,
 
     #[cfg(feature = "notify")]
     pub enable_notify: bool,
@@ -176,6 +259,116 @@ pub enum ProgressBarPosition {
     Right,
 }
 config_parser_impl!(ProgressBarPosition);
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VisualizerMode {
+    LeftBass,
+    RightBass,
+    CenterBass,
+    #[serde(alias = "mirrored")]
+    CenterMirrored,
+    #[serde(rename = "multi_peak_l_c_r")]
+    MultiPeakLcr,
+    #[serde(rename = "multi_peak_l_r")]
+    MultiPeakLr,
+}
+config_parser_impl!(VisualizerMode);
+
+impl VisualizerMode {
+    pub const ALL: [Self; 6] = [
+        Self::LeftBass,
+        Self::RightBass,
+        Self::CenterBass,
+        Self::CenterMirrored,
+        Self::MultiPeakLcr,
+        Self::MultiPeakLr,
+    ];
+
+    pub fn as_config_value(self) -> &'static str {
+        match self {
+            Self::LeftBass => "left_bass",
+            Self::RightBass => "right_bass",
+            Self::CenterBass => "center_bass",
+            Self::CenterMirrored => "center_mirrored",
+            Self::MultiPeakLcr => "multi_peak_l_c_r",
+            Self::MultiPeakLr => "multi_peak_l_r",
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VisualizerDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+config_parser_impl!(VisualizerDirection);
+
+impl VisualizerDirection {
+    pub const ALL: [Self; 4] = [Self::Up, Self::Down, Self::Left, Self::Right];
+
+    pub fn as_config_value(self) -> &'static str {
+        match self {
+            Self::Up => "up",
+            Self::Down => "down",
+            Self::Left => "left",
+            Self::Right => "right",
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy)]
+pub struct VisualizerLengthRange(pub f32, pub f32);
+
+impl VisualizerLengthRange {
+    pub fn new(min: f32, max: f32) -> Self {
+        Self(min, max)
+    }
+}
+config_parser_impl!(VisualizerLengthRange);
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VisualizerPlacement {
+    #[serde(alias = "bottom_full")]
+    BottomOfCover,
+    #[serde(alias = "header_right")]
+    RightOfCover,
+}
+config_parser_impl!(VisualizerPlacement);
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProgressBarPlacement {
+    #[serde(alias = "header_right_top")]
+    TopRightOfCover,
+    #[serde(alias = "header_right_bottom")]
+    BottomRightOfCover,
+    #[serde(alias = "bottom_full", alias = "cover_bottom")]
+    BottomOfCover,
+}
+config_parser_impl!(ProgressBarPlacement);
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TrackInfoPlacement {
+    #[serde(alias = "header_top")]
+    TopRight,
+    #[serde(alias = "header_middle")]
+    MiddleRight,
+    #[serde(alias = "header_bottom")]
+    BottomRight,
+}
+config_parser_impl!(TrackInfoPlacement);
+
+impl Default for TrackInfoPlacement {
+    fn default() -> Self {
+        Self::TopRight
+    }
+}
 
 #[derive(Debug, Deserialize, Serialize, ConfigParse, Clone)]
 pub struct Command {
@@ -375,6 +568,49 @@ impl Default for AppConfig {
 
             #[cfg(feature = "streaming")]
             enable_audio_visualization: false,
+            #[cfg(feature = "streaming")]
+            visualizer_preset: "balanced".to_string(),
+            #[cfg(feature = "streaming")]
+            visualizer_mode: VisualizerMode::LeftBass,
+            #[cfg(feature = "streaming")]
+            visualizer_direction: VisualizerDirection::Up,
+            #[cfg(feature = "streaming")]
+            visualizer_frequency_bias: 1.0,
+            #[cfg(feature = "streaming")]
+            visualizer_sensitivity: 1.0,
+            #[cfg(feature = "streaming")]
+            visualizer_rise_speed: 1.0,
+            #[cfg(feature = "streaming")]
+            visualizer_fall_speed: 1.0,
+            #[cfg(feature = "streaming")]
+            visualizer_bar_thickness: 1,
+            #[cfg(feature = "streaming")]
+            visualizer_bar_gap: 0,
+            #[cfg(feature = "streaming")]
+            visualizer_center_offset: 0,
+            #[cfg(feature = "streaming")]
+            visualizer_low_min_max_length: VisualizerLengthRange::new(0.0, 1.0 / 3.0),
+            #[cfg(feature = "streaming")]
+            visualizer_mid_min_max_length: VisualizerLengthRange::new(1.0 / 3.0, 2.0 / 3.0),
+            #[cfg(feature = "streaming")]
+            visualizer_high_min_max_length: VisualizerLengthRange::new(2.0 / 3.0, 0.85),
+            #[cfg(feature = "streaming")]
+            visualizer_peak_min_max_length: VisualizerLengthRange::new(0.85, 1.0),
+            #[cfg(feature = "streaming")]
+            visualizer_mid_threshold: 1.0 / 3.0,
+            #[cfg(feature = "streaming")]
+            visualizer_high_threshold: 2.0 / 3.0,
+            #[cfg(feature = "streaming")]
+            visualizer_peak_threshold: 0.85,
+            #[cfg(feature = "streaming")]
+            visualizer_placement: VisualizerPlacement::BottomOfCover,
+            #[cfg(feature = "streaming")]
+            visualizer_border: true,
+            #[cfg(feature = "streaming")]
+            visualizer_show_on_pause: true,
+
+            #[cfg(feature = "streaming")]
+            progress_bar_placement: ProgressBarPlacement::BottomOfCover,
 
             #[cfg(feature = "notify")]
             enable_notify: true,
@@ -440,6 +676,11 @@ impl LayoutConfig {
 }
 
 impl AppConfig {
+    #[cfg(feature = "streaming")]
+    pub fn legacy_visualizer_preset(&self) -> VisualizerPreset {
+        VisualizerPreset::from_app_config(self)
+    }
+
     pub fn new(path: &Path) -> Result<Self> {
         let mut config = Self::default();
         if !config.parse_config_file(path)? {
@@ -499,6 +740,81 @@ impl AppConfig {
             None => Ok(self.client_id.clone()),
         }
     }
+}
+
+pub fn write_app_config_value(key: &str, value: toml::Value) -> Result<()> {
+    let config_folder = get_config_folder_path()?;
+    let file_path = config_folder.join(APP_CONFIG_FILE);
+    let mut config_value = match std::fs::read_to_string(&file_path) {
+        Ok(content) => toml::from_str::<toml::Value>(&content)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            toml::Value::try_from(AppConfig::default())?
+        }
+        Err(error) => return Err(error.into()),
+    };
+
+    let table = config_value
+        .as_table_mut()
+        .context("app config root must be a TOML table")?;
+    table.insert(key.to_string(), value);
+
+    let content = toml::to_string_pretty(&config_value)?;
+    std::fs::write(file_path, content)?;
+    Ok(())
+}
+
+#[cfg(feature = "streaming")]
+fn format_visualizer_config_toml(content: &str) -> String {
+    let mut output = Vec::new();
+    let mut lines = content.lines().peekable();
+
+    while let Some(line) = lines.next() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("visualizer_") && trimmed.ends_with("_min_max_length = [") {
+            let first = lines.next().map(str::trim);
+            let second = lines.next().map(str::trim);
+            let closing = lines.next().map(str::trim);
+
+            if let (Some(first), Some(second), Some("]")) = (first, second, closing) {
+                output.push(format!(
+                    "{} [{}, {},]",
+                    line.trim_end_matches('[').trim_end(),
+                    first.trim_end_matches(','),
+                    second.trim_end_matches(',')
+                ));
+                continue;
+            }
+
+            output.push(line.to_string());
+            if let Some(first) = first {
+                output.push(first.to_string());
+            }
+            if let Some(second) = second {
+                output.push(second.to_string());
+            }
+            if let Some(closing) = closing {
+                output.push(closing.to_string());
+            }
+            continue;
+        }
+
+        output.push(line.to_string());
+    }
+
+    let mut formatted = output.join("\n");
+    if content.ends_with('\n') {
+        formatted.push('\n');
+    }
+    formatted
+}
+
+#[cfg(feature = "streaming")]
+pub fn write_visualizer_config_file(config: &VisualizerConfigFile) -> Result<()> {
+    let config_folder = get_config_folder_path()?;
+    let file_path = config_folder.join(VISUALIZER_CONFIG_FILE);
+    let content = format_visualizer_config_toml(&toml::to_string_pretty(config)?);
+    std::fs::write(file_path, content)?;
+    Ok(())
 }
 
 /// gets the application's configuration folder path

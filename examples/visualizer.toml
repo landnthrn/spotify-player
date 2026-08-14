@@ -1,0 +1,50 @@
+[active]
+behavior_preset = "balanced"
+look_preset = "boxed"
+placement_preset = "vislzr_b_bar_b_info_tr"
+visualizer_mode = "left_bass"
+visualizer_direction = "up"
+
+[[behavior_presets]]
+name = "balanced"
+visualizer_frequency_bias = 1.0
+visualizer_sensitivity = 1.0
+visualizer_rise_speed = 1.0
+visualizer_fall_speed = 1.0
+visualizer_low_min_max_length = [0.0, 0.33333334]
+visualizer_mid_min_max_length = [0.33333334, 0.6666667]
+visualizer_high_min_max_length = [0.6666667, 0.85]
+visualizer_peak_min_max_length = [0.85, 1.0]
+visualizer_mid_threshold = 0.33333334
+visualizer_high_threshold = 0.6666667
+visualizer_peak_threshold = 0.85
+
+[[behavior_presets]]
+name = "airy_peaks"
+visualizer_frequency_bias = 0.9
+visualizer_sensitivity = 1.05
+visualizer_rise_speed = 1.0
+visualizer_fall_speed = 0.75
+visualizer_low_min_max_length = [0.0, 0.18]
+visualizer_mid_min_max_length = [0.12, 0.42]
+visualizer_high_min_max_length = [0.32, 0.72]
+visualizer_peak_min_max_length = [0.55, 1.0]
+visualizer_mid_threshold = 0.38
+visualizer_high_threshold = 0.62
+visualizer_peak_threshold = 0.86
+
+[[look_presets]]
+name = "boxed"
+visualizer_bar_thickness = 1
+visualizer_bar_gap = 0
+visualizer_center_offset = 0
+visualizer_border = true
+visualizer_show_on_pause = true
+
+[[look_presets]]
+name = "borderless_gap"
+visualizer_bar_thickness = 1
+visualizer_bar_gap = 1
+visualizer_center_offset = 0
+visualizer_border = false
+visualizer_show_on_pause = true

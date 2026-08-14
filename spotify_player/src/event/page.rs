@@ -11,6 +11,17 @@ pub fn handle_key_sequence_for_page(
     state: &SharedState,
     ui: &mut UIStateGuard,
 ) -> Result<bool> {
+    if matches!(
+        key_sequence.keys.as_slice(),
+        [Key::None(crossterm::event::KeyCode::Delete)]
+            | [Key::None(crossterm::event::KeyCode::Esc)]
+    ) && ui.history.len() > 1
+    {
+        ui.history.pop();
+        ui.popup = None;
+        return Ok(true);
+    }
+
     let page_type = ui.current_page().page_type();
     // handle search page separately as it needs access to the raw key sequence
     // as opposed to the matched command

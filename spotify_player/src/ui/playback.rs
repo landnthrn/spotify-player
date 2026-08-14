@@ -1,7 +1,8 @@
 use super::{
-    config, utils::construct_and_render_block, Alignment, Borders, Constraint, Frame, Gauge,
-    Layout, Line, LineGauge, Modifier, Paragraph, PlaybackMetadata, Rect, SharedState, Span, Style,
-    Text, UIStateGuard, Wrap,
+    config,
+    utils::{construct_and_render_block, inset_rect},
+    Alignment, Borders, Constraint, Frame, Gauge, Layout, Line, LineGauge, Modifier, Paragraph,
+    PlaybackMetadata, Rect, SharedState, Span, Style, Text, UIStateGuard, Wrap,
 };
 #[cfg(feature = "image")]
 use crate::state::ImageRenderInfo;
@@ -10,6 +11,44 @@ use crate::{
     ui::utils::{format_genres, to_bidi_string},
 };
 use rspotify::model::Id;
+
+const PANEL_SIDE_PADDING: u16 = 1;
+const PLAYBACK_TEXT_LEFT_SHIFT: u16 = 1;
+const VIS_BOX_RIGHT_SHRINK: u16 = 1;
+const PROGRESS_BAR_HEIGHT: u16 = 1;
+const RIGHT_PROGRESS_LEFT_EXTENSION: u16 = 1;
+const RIGHT_PROGRESS_SIDE_EXTRA_PADDING: u16 = 1;
+const RIGHT_TOP_PROGRESS_TEXT_PADDING: u16 = 1;
+const BOTTOM_TRACK_INFO_NUDGE: u16 = 1;
+const VISUALIZER_INNER_PADDING_X: u16 = 2;
+const VISUALIZER_INNER_PADDING_Y: u16 = 1;
+#[cfg(feature = "streaming")]
+const HEADER_VIS_INNER_HEIGHT: u16 = 4;
+#[cfg(feature = "streaming")]
+const BOTTOM_VIS_INNER_HEIGHT: u16 = 8;
+#[cfg(feature = "image")]
+const COVER_IMG_LEFT_PADDING: u16 = 1;
+#[cfg(feature = "image")]
+const COVER_IMG_TOP_PADDING: u16 = 1;
+#[cfg(feature = "image")]
+const COVER_IMG_BOTTOM_PADDING: usize = 1;
+
+#[derive(Clone, Copy, Debug, Default)]
+struct PlaybackLayoutRects {
+    #[cfg(feature = "image")]
+    cover_img_rect: Option<Rect>,
+    right_area_rect: Rect,
+    playback_text_rect: Option<Rect>,
+    progress_bar_rect: Rect,
+    visualizer_rect: Option<Rect>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct RightColumnLayout {
+    playback_text_rect: Option<Rect>,
+    progress_bar_rect: Option<Rect>,
+    visualizer_rect: Option<Rect>,
+}
 
 /// Render a playback window showing information about the current playback, which includes
 /// - track title, artists, album
@@ -22,103 +61,107 @@ pub fn render_playback_window(
     ui: &mut UIStateGuard,
     rect: Rect,
 ) -> Rect {
+    #[cfg(feature = "streaming")]
+    let visualizer_preset = ui.visualizer_preset.clone();
+
+    #[cfg(feature = "streaming")]
+    let (rect, other_rect) = split_rect_for_playback_window(state, rect, &visualizer_preset);
+    #[cfg(not(feature = "streaming"))]
     let (rect, other_rect) = split_rect_for_playback_window(state, rect);
     let rect = construct_and_render_block("Playback", &ui.theme, Borders::ALL, frame, rect);
 
     let player = state.player.read();
     if let Some(ref playback) = player.playback {
         if let Some(item) = &playback.item {
-            // Carve off the visualization rows here, inside the active-playback
-            // branch, so the full rect is used when there is nothing playing.
+            let playback_text = player
+                .buffered_playback
+                .as_ref()
+                .map(|playback| construct_playback_text(ui, state, item, playback));
+
             #[cfg(feature = "streaming")]
-            let (rect, vis_rect) = {
-                let configs = config::get_config();
-                if configs.app_config.enable_audio_visualization
-                    && state.is_local_streaming_active()
-                {
-                    let chunks = Layout::vertical([
-                        Constraint::Fill(0),
-                        Constraint::Length(super::streaming::VIS_HEIGHT),
-                    ])
-                    .split(rect);
-                    (chunks[0], Some(chunks[1]))
-                } else {
-                    (rect, None)
-                }
-            };
+            let render_visualization = should_show_visualizer_area(
+                state,
+                player.buffered_playback.as_ref(),
+                &visualizer_preset,
+            );
 
-            let (metadata_rect, progress_bar_rect) = {
-                // Render the track's cover image if `image` feature is enabled
+            #[cfg(not(feature = "streaming"))]
+            let render_visualization = false;
+
+            #[cfg(feature = "streaming")]
+            let layout = split_rect_for_playback_layout(
+                rect,
+                playback_text
+                    .as_ref()
+                    .map_or(0, |text| text.lines.len() as u16),
+                render_visualization,
+                &visualizer_preset,
                 #[cfg(feature = "image")]
-                {
-                    let configs = config::get_config();
-                    // Split the allocated rectangle into `metadata_rect`, `cover_img_rect` and `progress_bar_rect`
-                    let (metadata_rect, cover_img_rect, progress_bar_rect) =
-                        match configs.app_config.progress_bar_position {
-                            config::ProgressBarPosition::Bottom => {
-                                let ver_chunks = split_rect_for_progress_bar(rect); // rect, progress_bar_rect
-                                let hor_chunks = split_rect_for_cover_img(ver_chunks.0, &ui.picker); // cover_img_rect, metadata_rect
-                                (hor_chunks.1, hor_chunks.0, ver_chunks.1)
-                            }
-                            config::ProgressBarPosition::Right => {
-                                let hor_chunks = split_rect_for_cover_img(rect, &ui.picker); // cover_img_rect, rect
-                                let ver_chunks = split_rect_for_progress_bar(hor_chunks.1); // metadata_rect, progress_bar_rect
-                                (ver_chunks.0, hor_chunks.0, ver_chunks.1)
-                            }
-                        };
+                &ui.picker,
+            );
+            #[cfg(not(feature = "streaming"))]
+            let layout = split_rect_for_playback_layout(
+                rect,
+                playback_text
+                    .as_ref()
+                    .map_or(0, |text| text.lines.len() as u16),
+                render_visualization,
+                #[cfg(feature = "image")]
+                &ui.picker,
+            );
 
-                    let url = match item {
-                        rspotify::model::PlayableItem::Track(track) => {
-                            crate::utils::get_track_album_image_url(track).map(String::from)
+            #[cfg(feature = "image")]
+            if let Some(cover_img_rect) = layout.cover_img_rect {
+                let url = match item {
+                    rspotify::model::PlayableItem::Track(track) => {
+                        crate::utils::get_track_album_image_url(track).map(String::from)
+                    }
+                    rspotify::model::PlayableItem::Episode(episode) => {
+                        crate::utils::get_episode_show_image_url(episode).map(String::from)
+                    }
+                    rspotify::model::PlayableItem::Unknown(_) => None,
+                };
+                if let Some(url) = url {
+                    let data = state.data.read();
+                    if let Some(img) = data.caches.images.get(&url) {
+                        if ui.last_cover_image_render_info.url != url
+                            || ui.last_cover_image_render_info.render_area != cover_img_rect
+                        {
+                            let cover_state = match crate::ui::cover_image::CoverImage::new(
+                                &ui.picker,
+                                img,
+                                cover_img_rect,
+                            ) {
+                                Ok(cover) => Some(cover),
+                                Err(err) => {
+                                    tracing::error!("Failed to encode cover image: {err:#}");
+                                    None
+                                }
+                            };
+                            ui.last_cover_image_render_info = ImageRenderInfo {
+                                url,
+                                render_area: cover_img_rect,
+                                state: cover_state,
+                            };
                         }
-                        rspotify::model::PlayableItem::Episode(episode) => {
-                            crate::utils::get_episode_show_image_url(episode).map(String::from)
-                        }
-                        rspotify::model::PlayableItem::Unknown(_) => None,
-                    };
-                    if let Some(url) = url {
-                        let data = state.data.read();
-                        if let Some(img) = data.caches.images.get(&url) {
-                            if ui.last_cover_image_render_info.url != url
-                                || ui.last_cover_image_render_info.render_area != cover_img_rect
-                            {
-                                let state = match crate::ui::cover_image::CoverImage::new(
-                                    &ui.picker,
-                                    img,
-                                    cover_img_rect,
-                                ) {
-                                    Ok(cover) => Some(cover),
-                                    Err(err) => {
-                                        tracing::error!("Failed to encode cover image: {err:#}");
-                                        None
-                                    }
-                                };
-                                ui.last_cover_image_render_info = ImageRenderInfo {
-                                    url,
-                                    render_area: cover_img_rect,
-                                    state,
-                                };
-                            }
-                            let area = ui.last_cover_image_render_info.render_area;
-                            if let Some(cover) = ui.last_cover_image_render_info.state.as_mut() {
-                                cover.render(frame, area);
-                            }
+                        let area = ui.last_cover_image_render_info.render_area;
+                        if let Some(cover) = ui.last_cover_image_render_info.state.as_mut() {
+                            cover.render(frame, area);
                         }
                     }
-                    (metadata_rect, progress_bar_rect)
                 }
+            }
 
-                #[cfg(not(feature = "image"))]
-                {
-                    let chunks = split_rect_for_progress_bar(rect);
-                    (chunks.0, chunks.1)
-                }
-            };
+            clear_area(frame, layout.right_area_rect, &ui.theme);
 
-            if let Some(ref playback) = player.buffered_playback {
-                let playback_text = construct_playback_text(ui, state, item, playback);
+            if let (Some(playback_text), Some(playback_text_rect)) =
+                (playback_text, layout.playback_text_rect)
+            {
                 let playback_desc = Paragraph::new(playback_text);
-                frame.render_widget(playback_desc, metadata_rect);
+                frame.render_widget(
+                    playback_desc,
+                    inset_rect(playback_text_rect, PLAYBACK_TEXT_LEFT_SHIFT, 0, 0, 0),
+                );
             }
 
             let duration = match item {
@@ -134,10 +177,63 @@ pub fn render_playback_window(
                 player.playback_progress().expect("non-empty playback"),
                 duration,
             );
+            #[cfg(feature = "streaming")]
+            let progress_side_padding = PANEL_SIDE_PADDING.saturating_add(
+                if matches!(
+                    visualizer_preset.progress_bar_placement,
+                    config::ProgressBarPlacement::TopRightOfCover
+                        | config::ProgressBarPlacement::BottomRightOfCover
+                ) {
+                    RIGHT_PROGRESS_SIDE_EXTRA_PADDING
+                } else {
+                    0
+                },
+            );
+            #[cfg(not(feature = "streaming"))]
+            let progress_side_padding = PANEL_SIDE_PADDING;
+            let progress_bar_rect = inset_rect(
+                layout.progress_bar_rect,
+                progress_side_padding,
+                progress_side_padding,
+                0,
+                0,
+            );
             render_playback_progress_bar(frame, ui, progress, duration, progress_bar_rect);
             #[cfg(feature = "streaming")]
-            if let Some(vis_r) = vis_rect {
-                super::streaming::render_audio_visualization(frame, state, vis_r);
+            if let Some(mut vis_r) = layout.visualizer_rect {
+                if visualizer_preset.visualizer_border {
+                    if visualizer_preset.visualizer_placement
+                        == config::VisualizerPlacement::RightOfCover
+                    {
+                        vis_r = inset_rect(vis_r, 0, VIS_BOX_RIGHT_SHRINK, 0, 0);
+                    }
+                    vis_r = construct_and_render_block("", &ui.theme, Borders::ALL, frame, vis_r);
+                    vis_r = inset_rect(
+                        vis_r,
+                        VISUALIZER_INNER_PADDING_X.saturating_sub(1),
+                        VISUALIZER_INNER_PADDING_X.saturating_sub(1),
+                        VISUALIZER_INNER_PADDING_Y.saturating_sub(1),
+                        VISUALIZER_INNER_PADDING_Y.saturating_sub(1),
+                    );
+                } else {
+                    vis_r = inset_rect(
+                        vis_r,
+                        VISUALIZER_INNER_PADDING_X,
+                        VISUALIZER_INNER_PADDING_X,
+                        VISUALIZER_INNER_PADDING_Y,
+                        VISUALIZER_INNER_PADDING_Y,
+                    );
+                }
+
+                if vis_r.width > 0 && vis_r.height > 0 {
+                    super::streaming::render_audio_visualization(
+                        frame,
+                        state,
+                        &ui.theme,
+                        vis_r,
+                        &visualizer_preset,
+                    );
+                }
             }
             return other_rect;
         }
@@ -185,26 +281,440 @@ pub fn render_playback_window(
     other_rect
 }
 
-fn split_rect_for_progress_bar(rect: Rect) -> (Rect, Rect) {
-    let chunks = Layout::vertical([Constraint::Fill(0), Constraint::Length(1)]).split(rect);
-    (chunks[0], chunks[1])
+fn split_rect_for_playback_layout(
+    rect: Rect,
+    text_height: u16,
+    render_visualization: bool,
+    #[cfg(feature = "streaming")] visualizer_preset: &config::VisualizerPreset,
+    #[cfg(feature = "image")] picker: &ratatui_image::picker::Picker,
+) -> PlaybackLayoutRects {
+    #[cfg(feature = "streaming")]
+    let progress_bar_placement = visualizer_preset.progress_bar_placement.clone();
+    #[cfg(not(feature = "streaming"))]
+    let progress_bar_placement = config::ProgressBarPlacement::BottomOfCover;
+    #[cfg(feature = "streaming")]
+    let track_info_placement = visualizer_preset.track_info_placement;
+    #[cfg(not(feature = "streaming"))]
+    let track_info_placement = config::TrackInfoPlacement::TopRight;
+
+    #[cfg(feature = "streaming")]
+    let visualizer_in_right = render_visualization
+        && visualizer_preset.visualizer_placement == config::VisualizerPlacement::RightOfCover;
+    #[cfg(feature = "streaming")]
+    let visualizer_in_bottom = render_visualization
+        && visualizer_preset.visualizer_placement == config::VisualizerPlacement::BottomOfCover;
+    #[cfg(not(feature = "streaming"))]
+    let visualizer_in_right = false;
+    #[cfg(not(feature = "streaming"))]
+    let visualizer_in_bottom = false;
+
+    let progress_in_right_top =
+        progress_bar_placement == config::ProgressBarPlacement::TopRightOfCover;
+    let progress_in_right_bottom =
+        progress_bar_placement == config::ProgressBarPlacement::BottomRightOfCover;
+    let progress_full_width = matches!(
+        progress_bar_placement,
+        config::ProgressBarPlacement::BottomOfCover
+    );
+    let resolved_track_info_placement =
+        resolve_track_info_placement(track_info_placement, visualizer_in_right);
+    let top_right_progress_gap = if progress_in_right_top
+        && resolved_track_info_placement == config::TrackInfoPlacement::TopRight
+    {
+        RIGHT_TOP_PROGRESS_TEXT_PADDING
+    } else {
+        0
+    };
+
+    let bottom_visualizer_height = if visualizer_in_bottom {
+        visualizer_total_height(config::VisualizerPlacement::BottomOfCover)
+    } else {
+        0
+    };
+    let bottom_progress_height = if progress_full_width {
+        progress_bar_total_height()
+    } else {
+        0
+    };
+    let bottom_total_height = bottom_visualizer_height + bottom_progress_height;
+
+    let (body_rect, bottom_rect) = if bottom_total_height > 0 {
+        let chunks =
+            Layout::vertical([Constraint::Fill(0), Constraint::Length(bottom_total_height)])
+                .split(rect);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (rect, None)
+    };
+
+    let mut bottom_progress_rect = None;
+    let mut bottom_visualizer_rect = None;
+    if let Some(bottom_rect) = bottom_rect {
+        let mut remaining = bottom_rect;
+        if progress_full_width {
+            let chunks = Layout::vertical([
+                Constraint::Length(progress_bar_total_height()),
+                Constraint::Fill(0),
+            ])
+            .split(remaining);
+            bottom_progress_rect = Some(inset_progress_slot(chunks[0]));
+            remaining = chunks[1];
+        }
+        if visualizer_in_bottom {
+            bottom_visualizer_rect = Some(remaining);
+        }
+    }
+
+    #[cfg(feature = "image")]
+    let (cover_img_rect, right_area_rect) = {
+        let (cover_img_rect, right_area_rect) = split_rect_for_cover_img(body_rect, picker);
+        (Some(cover_img_rect), right_area_rect)
+    };
+    #[cfg(not(feature = "image"))]
+    let right_area_rect = body_rect;
+
+    let right_layout = split_rect_for_right_column(
+        right_area_rect,
+        text_height,
+        visualizer_in_right,
+        progress_in_right_top,
+        progress_in_right_bottom,
+        progress_full_width,
+        top_right_progress_gap,
+        resolved_track_info_placement,
+    );
+
+    PlaybackLayoutRects {
+        #[cfg(feature = "image")]
+        cover_img_rect,
+        right_area_rect,
+        playback_text_rect: right_layout.playback_text_rect,
+        progress_bar_rect: right_layout
+            .progress_bar_rect
+            .or(bottom_progress_rect)
+            .unwrap_or_default(),
+        visualizer_rect: right_layout.visualizer_rect.or(bottom_visualizer_rect),
+    }
+}
+
+#[cfg(feature = "streaming")]
+fn should_show_visualizer_area(
+    state: &SharedState,
+    playback: Option<&PlaybackMetadata>,
+    visualizer_preset: &config::VisualizerPreset,
+) -> bool {
+    let configs = config::get_config();
+    if !configs.app_config.enable_audio_visualization {
+        return false;
+    }
+
+    if state.is_local_streaming_active() {
+        return true;
+    }
+
+    visualizer_preset.visualizer_show_on_pause
+        && playback.is_some_and(|playback| playback.device_name == configs.app_config.device.name)
+}
+
+fn split_rect_for_right_column(
+    rect: Rect,
+    text_height: u16,
+    visualizer_in_right: bool,
+    progress_in_right_top: bool,
+    progress_in_right_bottom: bool,
+    progress_full_width: bool,
+    top_right_progress_gap: u16,
+    track_info_placement: config::TrackInfoPlacement,
+) -> RightColumnLayout {
+    if rect.width == 0 || rect.height == 0 {
+        return RightColumnLayout::default();
+    }
+
+    match track_info_placement {
+        config::TrackInfoPlacement::TopRight => {
+            let text_rect = if text_height == 0 {
+                None
+            } else {
+                let text_area_height = text_height.saturating_add(if progress_in_right_top {
+                    top_right_progress_gap
+                } else {
+                    0
+                });
+                let chunks =
+                    Layout::vertical([Constraint::Length(text_area_height), Constraint::Fill(0)])
+                        .split(rect);
+
+                let mut layout = split_rect_for_right_column_content(
+                    chunks[1],
+                    Some(chunks[0]),
+                    visualizer_in_right,
+                    progress_in_right_top,
+                    progress_in_right_bottom,
+                );
+                layout.playback_text_rect = adjust_track_info_rect(
+                    layout.playback_text_rect,
+                    visualizer_in_right,
+                    progress_in_right_bottom,
+                    progress_full_width,
+                    track_info_placement,
+                );
+                return layout;
+            };
+
+            let mut layout = split_rect_for_right_column_content(
+                rect,
+                text_rect,
+                visualizer_in_right,
+                progress_in_right_top,
+                progress_in_right_bottom,
+            );
+            layout.playback_text_rect = adjust_track_info_rect(
+                layout.playback_text_rect,
+                visualizer_in_right,
+                progress_in_right_bottom,
+                progress_full_width,
+                track_info_placement,
+            );
+            layout
+        }
+        config::TrackInfoPlacement::MiddleRight => {
+            let mut layout = RightColumnLayout::default();
+            let mut remaining = rect;
+
+            if progress_in_right_top {
+                let chunks = Layout::vertical([
+                    Constraint::Length(progress_bar_total_height()),
+                    Constraint::Fill(0),
+                ])
+                .split(remaining);
+                layout.progress_bar_rect = Some(inset_right_progress_slot(chunks[0]));
+                remaining = chunks[1];
+            } else if progress_in_right_bottom {
+                let chunks = Layout::vertical([
+                    Constraint::Fill(0),
+                    Constraint::Length(progress_bar_total_height()),
+                ])
+                .split(remaining);
+                remaining = chunks[0];
+                layout.progress_bar_rect = Some(inset_right_progress_slot(chunks[1]));
+            }
+
+            if visualizer_in_right {
+                layout.visualizer_rect = Some(remaining);
+            }
+
+            if text_height > 0 && remaining.height > 0 {
+                let height = text_height.min(remaining.height);
+                let y = remaining
+                    .y
+                    .saturating_add(remaining.height.saturating_sub(height) / 2);
+                layout.playback_text_rect =
+                    Some(Rect::new(remaining.x, y, remaining.width, height));
+            }
+
+            layout
+        }
+        config::TrackInfoPlacement::BottomRight => {
+            let mut layout = RightColumnLayout::default();
+            let mut remaining = rect;
+
+            if progress_in_right_bottom {
+                let chunks = Layout::vertical([
+                    Constraint::Fill(0),
+                    Constraint::Length(progress_bar_total_height()),
+                ])
+                .split(remaining);
+                remaining = chunks[0];
+                layout.progress_bar_rect = Some(inset_right_progress_slot(chunks[1]));
+            } else if progress_in_right_top {
+                let chunks = Layout::vertical([
+                    Constraint::Length(progress_bar_total_height()),
+                    Constraint::Fill(0),
+                ])
+                .split(remaining);
+                layout.progress_bar_rect = Some(inset_right_progress_slot(chunks[0]));
+                remaining = chunks[1];
+            }
+
+            if visualizer_in_right {
+                layout.visualizer_rect = Some(remaining);
+            }
+
+            if text_height > 0 && remaining.height > 0 {
+                let height = text_height.min(remaining.height);
+                let mut y = remaining.bottom().saturating_sub(height);
+                if !visualizer_in_right && (progress_in_right_bottom || progress_full_width) {
+                    y = y.saturating_sub(BOTTOM_TRACK_INFO_NUDGE);
+                }
+                layout.playback_text_rect =
+                    Some(Rect::new(remaining.x, y, remaining.width, height));
+            }
+
+            layout
+        }
+    }
+}
+
+fn split_rect_for_right_column_content(
+    rect: Rect,
+    playback_text_rect: Option<Rect>,
+    visualizer_in_right: bool,
+    progress_in_right_top: bool,
+    progress_in_right_bottom: bool,
+) -> RightColumnLayout {
+    let mut layout = RightColumnLayout {
+        playback_text_rect,
+        ..RightColumnLayout::default()
+    };
+
+    if rect.width == 0 || rect.height == 0 {
+        return layout;
+    }
+
+    match (
+        progress_in_right_top,
+        progress_in_right_bottom,
+        visualizer_in_right,
+    ) {
+        (true, false, true) => {
+            let chunks = Layout::vertical([
+                Constraint::Length(progress_bar_total_height()),
+                Constraint::Fill(0),
+            ])
+            .split(rect);
+            layout.progress_bar_rect = Some(inset_right_progress_slot(chunks[0]));
+            layout.visualizer_rect = Some(chunks[1]);
+        }
+        (true, false, false) => {
+            let chunks = Layout::vertical([
+                Constraint::Length(progress_bar_total_height()),
+                Constraint::Fill(0),
+            ])
+            .split(rect);
+            layout.progress_bar_rect = Some(inset_right_progress_slot(chunks[0]));
+        }
+        (false, true, true) => {
+            let chunks = Layout::vertical([
+                Constraint::Fill(0),
+                Constraint::Length(progress_bar_total_height()),
+            ])
+            .split(rect);
+            layout.visualizer_rect = Some(chunks[0]);
+            layout.progress_bar_rect = Some(inset_right_progress_slot(chunks[1]));
+        }
+        (false, true, false) => {
+            let chunks = Layout::vertical([
+                Constraint::Fill(0),
+                Constraint::Length(progress_bar_total_height()),
+            ])
+            .split(rect);
+            layout.progress_bar_rect = Some(inset_right_progress_slot(chunks[1]));
+        }
+        _ if visualizer_in_right => {
+            layout.visualizer_rect = Some(rect);
+        }
+        _ => {}
+    }
+
+    layout
+}
+
+fn adjust_track_info_rect(
+    rect: Option<Rect>,
+    visualizer_in_right: bool,
+    progress_in_right_bottom: bool,
+    progress_full_width: bool,
+    track_info_placement: config::TrackInfoPlacement,
+) -> Option<Rect> {
+    rect.map(|rect| {
+        if visualizer_in_right {
+            return rect;
+        }
+
+        match track_info_placement {
+            config::TrackInfoPlacement::TopRight
+                if progress_in_right_bottom || progress_full_width =>
+            {
+                Rect::new(
+                    rect.x,
+                    rect.y.saturating_add(BOTTOM_TRACK_INFO_NUDGE),
+                    rect.width,
+                    rect.height,
+                )
+            }
+            _ => rect,
+        }
+    })
+}
+
+fn visualizer_total_height(placement: config::VisualizerPlacement) -> u16 {
+    let inner_height = match placement {
+        config::VisualizerPlacement::BottomOfCover => BOTTOM_VIS_INNER_HEIGHT,
+        config::VisualizerPlacement::RightOfCover => HEADER_VIS_INNER_HEIGHT,
+    };
+
+    inner_height + VISUALIZER_INNER_PADDING_Y.saturating_mul(2)
+}
+
+fn progress_bar_total_height() -> u16 {
+    PROGRESS_BAR_HEIGHT
+}
+
+fn inset_progress_slot(rect: Rect) -> Rect {
+    rect
+}
+
+fn inset_right_progress_slot(rect: Rect) -> Rect {
+    extend_rect_left(inset_progress_slot(rect), RIGHT_PROGRESS_LEFT_EXTENSION)
+}
+
+fn resolve_track_info_placement(
+    requested: config::TrackInfoPlacement,
+    visualizer_in_right: bool,
+) -> config::TrackInfoPlacement {
+    if visualizer_in_right {
+        config::TrackInfoPlacement::TopRight
+    } else {
+        requested
+    }
+}
+
+fn extend_rect_left(rect: Rect, amount: u16) -> Rect {
+    let shift = rect.x.min(amount);
+    Rect::new(
+        rect.x.saturating_sub(shift),
+        rect.y,
+        rect.width.saturating_add(shift),
+        rect.height,
+    )
 }
 
 #[cfg(feature = "image")]
 fn split_rect_for_cover_img(rect: Rect, picker: &ratatui_image::picker::Picker) -> (Rect, Rect) {
     let configs = config::get_config();
     let hor_chunks = Layout::horizontal([
-        Constraint::Length(cover_img_length(configs, picker)),
+        Constraint::Length(cover_img_length(configs, picker) + COVER_IMG_LEFT_PADDING),
         Constraint::Fill(0), // metadata_rect
     ])
     .spacing(1)
     .split(rect);
-    let ver_chunks = Layout::vertical([
-        Constraint::Length(configs.app_config.cover_img_width as u16), // cover_img_rect
-    ])
+    let ver_chunks = Layout::vertical([Constraint::Length(
+        configs.app_config.cover_img_width as u16
+            + COVER_IMG_TOP_PADDING
+            + COVER_IMG_BOTTOM_PADDING as u16,
+    )])
     .split(hor_chunks[0]);
 
-    (ver_chunks[0], hor_chunks[1])
+    (
+        inset_rect(
+            ver_chunks[0],
+            COVER_IMG_LEFT_PADDING,
+            0,
+            COVER_IMG_TOP_PADDING,
+            COVER_IMG_BOTTOM_PADDING as u16,
+        ),
+        hor_chunks[1],
+    )
 }
 
 /// Determine the cover image box's width in columns.
@@ -215,9 +725,26 @@ fn cover_img_length(configs: &config::Configs, picker: &ratatui_image::picker::P
         0 => {
             let font_size = picker.font_size();
             let rows = configs.app_config.cover_img_width as u16;
-            rows * font_size.height / font_size.width
+            if font_size.width == 0 {
+                rows
+            } else {
+                rows * font_size.height / font_size.width
+            }
         }
         length => length as u16,
+    }
+}
+
+fn clear_area(frame: &mut Frame, rect: Rect, theme: &config::Theme) {
+    for x in rect.left()..rect.right() {
+        for y in rect.top()..rect.bottom() {
+            frame
+                .buffer_mut()
+                .cell_mut((x, y))
+                .expect("invalid cell")
+                .set_char(' ')
+                .set_style(theme.app());
+        }
     }
 }
 
@@ -400,6 +927,10 @@ fn render_playback_progress_bar(
     duration: chrono::Duration,
     rect: Rect,
 ) {
+    if rect.width == 0 || rect.height == 0 {
+        return;
+    }
+
     // Negative numbers can sometimes appear from progress.num_seconds() so this stops
     // them coming through into the ratios
     let ratio = (progress.num_seconds() as f64 / duration.num_seconds() as f64).clamp(0.0, 1.0);
@@ -442,44 +973,115 @@ fn render_playback_progress_bar(
 
 /// Split the given area into two, the first one for the playback window
 /// and the second one for the main application's layout (popup, page, etc).
-#[allow(unused_variables)]
-fn split_rect_for_playback_window(state: &SharedState, rect: Rect) -> (Rect, Rect) {
+fn split_rect_for_playback_window(
+    state: &SharedState,
+    rect: Rect,
+    #[cfg(feature = "streaming")] visualizer_preset: &config::VisualizerPreset,
+) -> (Rect, Rect) {
     let configs = config::get_config();
-    let playback_width = configs.app_config.layout.playback_window_height;
-    // the playback window's width should not be smaller than the cover image's width + 1
-    #[cfg(feature = "image")]
-    let playback_width = std::cmp::max(configs.app_config.cover_img_width + 1, playback_width);
-
-    // When visualization is enabled *and* librespot is actively streaming,
-    // reserve extra rows for the bar chart. When the local player is idle
-    // (e.g. playback on an external Spotify Connect device) the rows are not
-    // reserved so the space is available to the rest of the layout.
     #[cfg(feature = "streaming")]
-    let playback_width = playback_width
-        + if configs.app_config.enable_audio_visualization && state.is_local_streaming_active() {
-            super::streaming::VIS_HEIGHT as usize
-        } else {
-            0
-        };
+    let progress_bar_placement = visualizer_preset.progress_bar_placement.clone();
+    #[cfg(not(feature = "streaming"))]
+    let progress_bar_placement = config::ProgressBarPlacement::BottomOfCover;
+    let mut inner_height = configs.app_config.layout.playback_window_height as u16;
 
-    // add lines for top/bottom borders depending on the progress bar's position
-    let num_lines = match configs.app_config.progress_bar_position {
-        config::ProgressBarPosition::Bottom => 2,
-        config::ProgressBarPosition::Right => 1,
+    #[cfg(feature = "image")]
+    {
+        inner_height = inner_height.max(
+            configs.app_config.cover_img_width as u16
+                + COVER_IMG_TOP_PADDING
+                + COVER_IMG_BOTTOM_PADDING as u16,
+        );
+    }
+
+    let playback_text_height = configs.app_config.playback_format.lines().count() as u16;
+
+    #[cfg(feature = "streaming")]
+    let render_visualization = {
+        let player = state.player.read();
+        should_show_visualizer_area(state, player.buffered_playback.as_ref(), visualizer_preset)
     };
-    let playback_width = (playback_width + num_lines) as u16;
+    #[cfg(not(feature = "streaming"))]
+    let render_visualization = false;
+    #[cfg(feature = "streaming")]
+    let track_info_placement = resolve_track_info_placement(
+        visualizer_preset.track_info_placement,
+        render_visualization
+            && visualizer_preset.visualizer_placement == config::VisualizerPlacement::RightOfCover,
+    );
+    #[cfg(not(feature = "streaming"))]
+    let track_info_placement = config::TrackInfoPlacement::TopRight;
+
+    let right_progress_height = if matches!(
+        progress_bar_placement,
+        config::ProgressBarPlacement::TopRightOfCover
+            | config::ProgressBarPlacement::BottomRightOfCover
+    ) {
+        progress_bar_total_height()
+    } else {
+        0
+    };
+    let top_right_progress_gap = if progress_bar_placement
+        == config::ProgressBarPlacement::TopRightOfCover
+        && track_info_placement == config::TrackInfoPlacement::TopRight
+    {
+        RIGHT_TOP_PROGRESS_TEXT_PADDING
+    } else {
+        0
+    };
+
+    #[cfg(feature = "streaming")]
+    let right_visualizer_height = if render_visualization
+        && visualizer_preset.visualizer_placement == config::VisualizerPlacement::RightOfCover
+    {
+        visualizer_total_height(config::VisualizerPlacement::RightOfCover)
+    } else {
+        0
+    };
+    #[cfg(not(feature = "streaming"))]
+    let right_visualizer_height = 0;
+
+    inner_height = inner_height.max(
+        playback_text_height
+            + top_right_progress_gap
+            + right_progress_height
+            + right_visualizer_height,
+    );
+
+    let full_width_progress_height = if matches!(
+        progress_bar_placement,
+        config::ProgressBarPlacement::BottomOfCover
+    ) {
+        progress_bar_total_height()
+    } else {
+        0
+    };
+
+    #[cfg(feature = "streaming")]
+    let full_width_visualizer_height = if render_visualization
+        && visualizer_preset.visualizer_placement == config::VisualizerPlacement::BottomOfCover
+    {
+        visualizer_total_height(config::VisualizerPlacement::BottomOfCover)
+    } else {
+        0
+    };
+    #[cfg(not(feature = "streaming"))]
+    let full_width_visualizer_height = 0;
+
+    let playback_height =
+        inner_height + full_width_progress_height + full_width_visualizer_height + 2;
 
     match configs.app_config.layout.playback_window_position {
         config::Position::Top => {
             let chunks =
-                Layout::vertical([Constraint::Length(playback_width), Constraint::Fill(0)])
+                Layout::vertical([Constraint::Length(playback_height), Constraint::Fill(0)])
                     .split(rect);
 
             (chunks[0], chunks[1])
         }
         config::Position::Bottom => {
             let chunks =
-                Layout::vertical([Constraint::Fill(0), Constraint::Length(playback_width)])
+                Layout::vertical([Constraint::Fill(0), Constraint::Length(playback_height)])
                     .split(rect);
 
             (chunks[1], chunks[0])

@@ -1,3 +1,4 @@
+use crate::state::{VisualizerMenuColumn, VisualizerMenuState};
 use crate::{command::Command, utils::filtered_items_from_query};
 
 use super::{
@@ -21,9 +22,11 @@ pub fn render_popup(
     ui: &mut UIStateGuard,
     rect: Rect,
 ) -> (Rect, bool) {
+    let theme = ui.theme.clone();
+
     match ui.popup {
         None => (rect, true),
-        Some(ref popup) => match popup {
+        Some(ref mut popup) => match popup {
             PopupState::PlaylistCreate {
                 name,
                 desc,
@@ -38,7 +41,7 @@ pub fn render_popup(
 
                 let name_input = construct_and_render_block(
                     "Enter Name for New Playlist:",
-                    &ui.theme,
+                    &theme,
                     Borders::ALL,
                     frame,
                     popup_chunks[0],
@@ -46,7 +49,7 @@ pub fn render_popup(
 
                 let desc_input = construct_and_render_block(
                     "Enter Description for New Playlist:",
-                    &ui.theme,
+                    &theme,
                     Borders::ALL,
                     frame,
                     popup_chunks[1],
@@ -67,7 +70,7 @@ pub fn render_popup(
                     Layout::vertical([Constraint::Fill(0), Constraint::Length(3)]).split(rect);
 
                 let rect =
-                    construct_and_render_block("Search", &ui.theme, Borders::ALL, frame, chunks[1]);
+                    construct_and_render_block("Search", &theme, Borders::ALL, frame, chunks[1]);
 
                 frame.render_widget(Paragraph::new(format!("/{query}")), rect);
                 (chunks[0], true)
@@ -112,10 +115,28 @@ pub fn render_popup(
                 let rect = render_list_popup(frame, rect, "Devices", items, 5, ui);
                 (rect, false)
             }
-            PopupState::ThemeList(themes, ..) => {
+            PopupState::ThemeList { themes, .. } => {
                 let items = themes.iter().map(|t| (t.name.clone(), false)).collect();
-
-                let rect = render_list_popup(frame, rect, "Themes", items, 7, ui);
+                let outer = construct_and_render_block("Themes", &theme, Borders::ALL, frame, rect);
+                let chunks =
+                    Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).split(outer);
+                let selected_index = ui.popup.as_ref().and_then(PopupState::list_selected);
+                let (list, len) = utils::construct_list_widget(&theme, items, true, selected_index);
+                utils::render_list_window(
+                    frame,
+                    list,
+                    chunks[0],
+                    len,
+                    ui.popup.as_mut().unwrap().list_state_mut().unwrap(),
+                );
+                frame.render_widget(
+                    Paragraph::new("r - refresh").alignment(ratatui::layout::Alignment::Right),
+                    chunks[1],
+                );
+                (Rect::default(), false)
+            }
+            PopupState::VisualizerMenu(menu) => {
+                let rect = render_visualizer_menu_popup(frame, rect, &theme, menu);
                 (rect, false)
             }
             PopupState::UserPlaylistList(action, _) => {
@@ -161,7 +182,7 @@ pub fn render_popup(
                 // Render search input
                 let search_rect = construct_and_render_block(
                     "Search Playlists (type to search, backspace on empty to close)",
-                    &ui.theme,
+                    &theme,
                     Borders::ALL,
                     frame,
                     chunks[0],
@@ -209,13 +230,8 @@ pub fn render_popup(
                 let chunks =
                     Layout::vertical([Constraint::Fill(0), Constraint::Length(3)]).split(rect);
 
-                let confirm_rect = construct_and_render_block(
-                    "Confirm",
-                    &ui.theme,
-                    Borders::ALL,
-                    frame,
-                    chunks[1],
-                );
+                let confirm_rect =
+                    construct_and_render_block("Confirm", &theme, Borders::ALL, frame, chunks[1]);
 
                 frame.render_widget(Paragraph::new(format!("{message} (y/n)")), confirm_rect);
 
@@ -223,6 +239,103 @@ pub fn render_popup(
             }
         },
     }
+}
+
+fn render_visualizer_menu_popup(
+    frame: &mut Frame,
+    rect: Rect,
+    theme: &config::Theme,
+    menu: &mut VisualizerMenuState,
+) -> Rect {
+    let outer = construct_and_render_block("Visualizer Settings", theme, Borders::ALL, frame, rect);
+    let chunks = Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).split(outer);
+    let columns = Layout::horizontal([
+        Constraint::Percentage(20),
+        Constraint::Percentage(20),
+        Constraint::Percentage(20),
+        Constraint::Percentage(10),
+        Constraint::Percentage(25),
+    ])
+    .spacing(1)
+    .split(chunks[0]);
+
+    render_visualizer_menu_column(
+        frame,
+        theme,
+        columns[0],
+        "Behavior",
+        menu.focus == VisualizerMenuColumn::Behavior,
+        menu.behavior_items(),
+        &mut menu.behavior_state,
+    );
+    render_visualizer_menu_column(
+        frame,
+        theme,
+        columns[1],
+        "Look",
+        menu.focus == VisualizerMenuColumn::Look,
+        menu.look_items(),
+        &mut menu.look_state,
+    );
+    render_visualizer_menu_column(
+        frame,
+        theme,
+        columns[2],
+        "Mode",
+        menu.focus == VisualizerMenuColumn::Mode,
+        menu.mode_items(),
+        &mut menu.mode_state,
+    );
+    render_visualizer_menu_column(
+        frame,
+        theme,
+        columns[3],
+        "Direction",
+        menu.focus == VisualizerMenuColumn::Direction,
+        menu.direction_items(),
+        &mut menu.direction_state,
+    );
+    render_visualizer_menu_column(
+        frame,
+        theme,
+        columns[4],
+        "Placement",
+        menu.focus == VisualizerMenuColumn::Placement,
+        menu.placement_items(),
+        &mut menu.placement_state,
+    );
+
+    frame.render_widget(
+        Paragraph::new("r - refresh").alignment(ratatui::layout::Alignment::Right),
+        chunks[1],
+    );
+
+    Rect::default()
+}
+
+fn render_visualizer_menu_column(
+    frame: &mut Frame,
+    theme: &config::Theme,
+    rect: Rect,
+    title: &str,
+    is_focused: bool,
+    items: Vec<String>,
+    state: &mut ratatui::widgets::ListState,
+) {
+    let title = if is_focused {
+        format!("* {title}")
+    } else {
+        title.to_string()
+    };
+    let inner = construct_and_render_block(&title, theme, Borders::ALL, frame, rect);
+    let selected_index = state.selected();
+    let (list, len) = utils::construct_list_widget(
+        theme,
+        items.into_iter().map(|item| (item, false)).collect(),
+        true,
+        selected_index,
+    );
+    utils::render_list_window(frame, list, inner, len, state);
 }
 
 /// A helper function to render a list popup

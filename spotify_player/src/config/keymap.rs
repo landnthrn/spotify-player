@@ -144,6 +144,11 @@ impl Default for KeymapConfig {
                     key_sequence: "T".into(),
                     command: Command::SwitchTheme,
                 },
+                #[cfg(feature = "streaming")]
+                Keymap {
+                    key_sequence: "V".into(),
+                    command: Command::SwitchVisualizerPreset,
+                },
                 Keymap {
                     key_sequence: "D".into(),
                     command: Command::SwitchDevice,

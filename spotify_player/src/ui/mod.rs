@@ -146,9 +146,12 @@ fn render_application(frame: &mut Frame, state: &SharedState, ui: &mut UIStateGu
 
     let rect = popup::render_shortcut_help_popup(frame, ui, rect);
 
+    let suppress_main_layout = matches!(ui.popup, Some(PopupState::VisualizerMenu(..)));
     let (rect, is_active) = popup::render_popup(frame, state, ui, rect);
 
-    render_main_layout(is_active, frame, state, ui, rect);
+    if !suppress_main_layout {
+        render_main_layout(is_active, frame, state, ui, rect);
+    }
 }
 
 /// Render the application's main layout

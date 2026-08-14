@@ -13,7 +13,8 @@ use crate::{
         LibraryPageUIState, PageState, PageType, PlayableId, Playback, PlaylistCreateCurrentField,
         PlaylistFolderItem, PlaylistId, PlaylistPopupAction, PopupState, SearchFocusState,
         SearchPageUIState, SharedState, ShowId, Track, TrackId, TrackOrder, TracksId, UIStateGuard,
-        USER_LIKED_TRACKS_ID, USER_RECENTLY_PLAYED_TRACKS_ID, USER_TOP_TRACKS_ID,
+        VisualizerMenuState, USER_LIKED_TRACKS_ID, USER_RECENTLY_PLAYED_TRACKS_ID,
+        USER_TOP_TRACKS_ID,
     },
     ui::{single_line_input::LineInput, Orientation},
     utils::parse_uri,
@@ -30,6 +31,19 @@ mod clipboard;
 mod page;
 mod popup;
 mod window;
+
+fn load_themes_for_popup(current_theme_name: &str) -> Result<Vec<config::Theme>> {
+    let config_folder = config::get_config_folder_path()?;
+    let mut themes = config::ThemeConfig::new(&config_folder)?.themes;
+    if let Some(id) = themes
+        .iter()
+        .position(|theme| theme.name == current_theme_name)
+    {
+        let theme = themes.remove(id);
+        themes.insert(0, theme);
+    }
+    Ok(themes)
+}
 
 /// Start a terminal event handler (key pressed, mouse clicked, etc)
 pub fn start_event_handler(state: &SharedState, client_pub: &flume::Sender<ClientRequest>) {
@@ -826,15 +840,26 @@ fn handle_global_command(
             client_pub.send(ClientRequest::GetDevices)?;
         }
         Command::SwitchTheme => {
-            // get the available themes with the current theme moved to the first position
-            let mut themes = config::get_config().theme_config.themes.clone();
-            let id = themes.iter().position(|t| t.name == ui.theme.name);
-            if let Some(id) = id {
-                let theme = themes.remove(id);
-                themes.insert(0, theme);
+            let themes = load_themes_for_popup(&ui.theme.name)?;
+            ui.popup = Some(PopupState::ThemeList {
+                themes,
+                list_state: ListState::default(),
+                original_theme: ui.theme.clone(),
+            });
+        }
+        #[cfg(feature = "streaming")]
+        Command::SwitchVisualizerPreset => {
+            let config_folder = config::get_config_folder_path()?;
+            let mut visualizer_config = config::VisualizerConfigFile::new(&config_folder)?;
+            if !visualizer_config.loaded_from_file {
+                visualizer_config.active.visualizer_mode = ui.visualizer_preset.visualizer_mode;
+                visualizer_config.active.visualizer_direction =
+                    ui.visualizer_preset.visualizer_direction;
             }
-
-            ui.popup = Some(PopupState::ThemeList(themes, ListState::default()));
+            ui.popup = Some(PopupState::VisualizerMenu(VisualizerMenuState::new(
+                visualizer_config,
+                ui.visualizer_preset.clone(),
+            )));
         }
         #[cfg(feature = "streaming")]
         Command::RestartIntegratedClient => {

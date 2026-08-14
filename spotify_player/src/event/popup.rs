@@ -4,12 +4,54 @@ use crate::{
 };
 use anyhow::Context;
 
+fn load_theme_config() -> Result<config::ThemeConfig> {
+    let config_folder = config::get_config_folder_path()?;
+    config::ThemeConfig::new(&config_folder)
+}
+
+fn load_themes_exact() -> Result<Vec<config::Theme>> {
+    Ok(load_theme_config()?.themes)
+}
+
+#[cfg(feature = "streaming")]
+fn load_visualizer_menu_state(
+    current_visualizer: &crate::config::VisualizerPreset,
+) -> Result<crate::state::VisualizerMenuState> {
+    let config_folder = config::get_config_folder_path()?;
+    let mut visualizer_config = config::VisualizerConfigFile::new(&config_folder)?;
+    if !visualizer_config.loaded_from_file {
+        visualizer_config.active.visualizer_mode = current_visualizer.visualizer_mode;
+        visualizer_config.active.visualizer_direction = current_visualizer.visualizer_direction;
+    }
+
+    let preview = visualizer_config.active_visualizer_preset();
+    Ok(crate::state::VisualizerMenuState::new(
+        visualizer_config,
+        preview,
+    ))
+}
+
 pub fn handle_key_sequence_for_popup(
     key_sequence: &KeySequence,
     client_pub: &flume::Sender<ClientRequest>,
     state: &SharedState,
     ui: &mut UIStateGuard,
 ) -> Result<bool> {
+    if matches!(
+        key_sequence.keys.as_slice(),
+        [Key::None(crossterm::event::KeyCode::Delete)]
+            | [Key::None(crossterm::event::KeyCode::Esc)]
+    ) {
+        match ui.popup.as_ref().context("empty popup")? {
+            PopupState::VisualizerMenu(menu) => {
+                ui.visualizer_preset = menu.original_visualizer.clone();
+            }
+            _ => {}
+        }
+        ui.popup = None;
+        return Ok(true);
+    }
+
     // handle popups that need reading the raw key sequence instead of the matched command
     match ui.popup.as_ref().context("empty popup")? {
         PopupState::Search { .. } => {
@@ -42,6 +84,7 @@ pub fn handle_key_sequence_for_popup(
                 action.clone(),
             );
         }
+        PopupState::VisualizerMenu(..) => {}
         _ => {}
     }
 
@@ -62,6 +105,9 @@ pub fn handle_key_sequence_for_popup(
         }
         PopupState::ActionList(..) => {
             anyhow::bail!("action list popup should be handled before")
+        }
+        PopupState::VisualizerMenu(..) => {
+            return handle_command_for_visualizer_menu_popup(command, ui);
         }
         PopupState::ArtistList(_, artists, _) => {
             let n_items = artists.len();
@@ -266,7 +312,38 @@ pub fn handle_key_sequence_for_popup(
                 &rspotify::model::Type::Album,
             )
         }
-        PopupState::ThemeList(themes, _) => {
+        PopupState::ThemeList { themes, .. } => {
+            if command == Command::RefreshPlayback {
+                let selected_id = match ui.popup.as_ref() {
+                    Some(PopupState::ThemeList { list_state, .. }) => {
+                        list_state.selected().unwrap_or_default()
+                    }
+                    _ => 0,
+                };
+                let original_theme = match ui.popup.as_ref() {
+                    Some(PopupState::ThemeList { original_theme, .. }) => original_theme.clone(),
+                    _ => ui.theme.clone(),
+                };
+                let themes = load_themes_exact()?;
+                let selected_id = if themes.is_empty() {
+                    None
+                } else {
+                    Some(selected_id.min(themes.len() - 1))
+                };
+                let refreshed_theme = selected_id
+                    .and_then(|id| themes.get(id).cloned())
+                    .unwrap_or_else(crate::config::Theme::default);
+                let mut list_state = ListState::default();
+                list_state.select(selected_id);
+                ui.theme = refreshed_theme;
+                ui.popup = Some(PopupState::ThemeList {
+                    themes,
+                    list_state,
+                    original_theme,
+                });
+                return Ok(true);
+            }
+
             let n_items = themes.len();
 
             handle_command_for_list_popup(
@@ -275,17 +352,25 @@ pub fn handle_key_sequence_for_popup(
                 n_items,
                 |ui: &mut UIStateGuard, id: usize| {
                     ui.theme = match ui.popup {
-                        Some(PopupState::ThemeList(ref themes, _)) => themes[id].clone(),
+                        Some(PopupState::ThemeList { ref themes, .. }) => themes[id].clone(),
                         _ => return,
                     };
                 },
-                |ui: &mut UIStateGuard, _| -> Result<()> {
+                |ui: &mut UIStateGuard, id| -> Result<()> {
+                    if let Some(PopupState::ThemeList { ref themes, .. }) = ui.popup {
+                        config::write_app_config_value(
+                            "theme",
+                            toml::Value::String(themes[id].name.clone()),
+                        )?;
+                    }
                     ui.popup = None;
                     Ok(())
                 },
                 |ui: &mut UIStateGuard| {
                     ui.theme = match ui.popup {
-                        Some(PopupState::ThemeList(ref themes, _)) => themes[0].clone(),
+                        Some(PopupState::ThemeList {
+                            ref original_theme, ..
+                        }) => original_theme.clone(),
                         _ => return,
                     };
                     ui.popup = None;
@@ -314,6 +399,119 @@ pub fn handle_key_sequence_for_popup(
                 },
             )
         }
+    }
+}
+
+fn handle_command_for_visualizer_menu_popup(
+    command: Command,
+    ui: &mut UIStateGuard,
+) -> anyhow::Result<bool> {
+    enum MenuOutcome {
+        Preview(crate::config::VisualizerPreset),
+        Persist(
+            crate::config::VisualizerConfigFile,
+            crate::config::VisualizerPreset,
+        ),
+        Close(crate::config::VisualizerPreset),
+        Noop,
+        Unhandled,
+    }
+
+    let current_visualizer = ui.visualizer_preset.clone();
+    let outcome = {
+        let Some(PopupState::VisualizerMenu(menu)) = ui.popup.as_mut() else {
+            return Ok(false);
+        };
+
+        match command {
+            Command::FocusNextWindow => {
+                menu.focus_next();
+                MenuOutcome::Noop
+            }
+            Command::FocusPreviousWindow => {
+                menu.focus_previous();
+                MenuOutcome::Noop
+            }
+            Command::SelectPreviousOrScrollUp => {
+                menu.select_previous();
+                MenuOutcome::Preview(menu.preview_preset())
+            }
+            Command::SelectNextOrScrollDown => {
+                menu.select_next();
+                MenuOutcome::Preview(menu.preview_preset())
+            }
+            Command::SelectFirstOrScrollToTop => {
+                menu.select_first();
+                MenuOutcome::Preview(menu.preview_preset())
+            }
+            Command::SelectLastOrScrollToBottom => {
+                menu.select_last();
+                MenuOutcome::Preview(menu.preview_preset())
+            }
+            Command::ChooseSelected => {
+                let preview = menu.preview_preset();
+                MenuOutcome::Persist(menu.config.clone(), preview)
+            }
+            #[cfg(feature = "streaming")]
+            Command::RefreshPlayback => {
+                let focus = menu.focus;
+                let original_visualizer = menu.original_visualizer.clone();
+                let behavior_id = menu.behavior_state.selected().unwrap_or_default();
+                let look_id = menu.look_state.selected().unwrap_or_default();
+                let placement_id = menu.placement_state.selected().unwrap_or_default();
+                let mode_id = menu.mode_state.selected().unwrap_or_default();
+                let direction_id = menu.direction_state.selected().unwrap_or_default();
+                let mut reloaded = load_visualizer_menu_state(&current_visualizer)?;
+                reloaded.original_visualizer = original_visualizer;
+                reloaded.focus = focus;
+                if !reloaded.behavior_items().is_empty() {
+                    reloaded
+                        .behavior_state
+                        .select(Some(behavior_id.min(reloaded.behavior_items().len() - 1)));
+                }
+                if !reloaded.look_items().is_empty() {
+                    reloaded
+                        .look_state
+                        .select(Some(look_id.min(reloaded.look_items().len() - 1)));
+                }
+                if !reloaded.placement_items().is_empty() {
+                    reloaded
+                        .placement_state
+                        .select(Some(placement_id.min(reloaded.placement_items().len() - 1)));
+                }
+                reloaded
+                    .mode_state
+                    .select(Some(mode_id.min(reloaded.mode_items().len() - 1)));
+                reloaded
+                    .direction_state
+                    .select(Some(direction_id.min(reloaded.direction_items().len() - 1)));
+                let preview = reloaded.preview_preset();
+                *menu = reloaded;
+                MenuOutcome::Preview(preview)
+            }
+            Command::ClosePopup => MenuOutcome::Close(menu.original_visualizer.clone()),
+            _ => MenuOutcome::Unhandled,
+        }
+    };
+
+    match outcome {
+        MenuOutcome::Preview(preview) => {
+            ui.visualizer_preset = preview;
+            Ok(true)
+        }
+        MenuOutcome::Persist(config_file, preview) => {
+            ui.visualizer_preset = preview;
+            config::write_visualizer_config_file(&config_file)?;
+            ui.popup = None;
+            Ok(true)
+        }
+        MenuOutcome::Close(original) => {
+            ui.visualizer_preset = original;
+            ui.popup = None;
+            Ok(true)
+        }
+        MenuOutcome::Noop => Ok(true),
+        MenuOutcome::Unhandled => Ok(false),
     }
 }
 

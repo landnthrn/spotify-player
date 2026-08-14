@@ -50,6 +50,8 @@ pub enum Command {
     FocusPreviousWindow,
 
     SwitchTheme,
+    #[cfg(feature = "streaming")]
+    SwitchVisualizerPreset,
     SwitchDevice,
     Search,
     Queue,
@@ -342,6 +344,8 @@ impl Command {
             Self::FocusNextWindow => "focus the next focusable window (if any)",
             Self::FocusPreviousWindow => "focus the previous focusable window (if any)",
             Self::SwitchTheme => "open a popup for switching theme",
+            #[cfg(feature = "streaming")]
+            Self::SwitchVisualizerPreset => "open a popup for switching visualizer settings",
             Self::SwitchDevice => "open a popup for switching device",
             Self::Search => "open a popup for searching in the current page",
             Self::BrowseUserPlaylists => "open a popup for browsing user's playlists",

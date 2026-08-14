@@ -448,6 +448,7 @@ List of supported commands:
 | `FocusNextWindow`               | focus the next focusable window (if any)                                                           | `tab`              |
 | `FocusPreviousWindow`           | focus the previous focusable window (if any)                                                       | `backtab`          |
 | `SwitchTheme`                   | open a popup for switching theme                                                                   | `T`                |
+| `SwitchVisualizerPreset`        | open a popup for switching visualizer settings                                                     | `V`                |
 | `SwitchDevice`                  | open a popup for switching device                                                                  | `D`                |
 | `Search`                        | open a popup for searching in the current page                                                     | `/`                |
 | `BrowseUserPlaylists`           | open a popup for browsing user's playlists                                                         | `u p`              |

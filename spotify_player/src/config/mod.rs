@@ -338,23 +338,32 @@ pub enum VisualizerDirection {
     Right,
     #[serde(rename = "left_and_right")]
     LeftAndRight,
+    #[serde(rename = "center_left_and_right")]
+    CenterLeftAndRight,
     #[serde(rename = "up_and_down")]
     UpAndDown,
+    #[serde(rename = "center_up_and_down")]
+    CenterUpAndDown,
 }
 config_parser_impl!(VisualizerDirection);
 
 impl VisualizerDirection {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 8] = [
         Self::Up,
         Self::Down,
         Self::Left,
         Self::Right,
         Self::LeftAndRight,
+        Self::CenterLeftAndRight,
         Self::UpAndDown,
+        Self::CenterUpAndDown,
     ];
 
     pub fn is_dual(self) -> bool {
-        matches!(self, Self::LeftAndRight | Self::UpAndDown)
+        matches!(
+            self,
+            Self::LeftAndRight | Self::CenterLeftAndRight | Self::UpAndDown | Self::CenterUpAndDown
+        )
     }
 
     pub fn as_config_value(self) -> &'static str {
@@ -364,14 +373,18 @@ impl VisualizerDirection {
             Self::Left => "left",
             Self::Right => "right",
             Self::LeftAndRight => "left_and_right",
+            Self::CenterLeftAndRight => "center_left_and_right",
             Self::UpAndDown => "up_and_down",
+            Self::CenterUpAndDown => "center_up_and_down",
         }
     }
 
     pub fn as_menu_label(self) -> &'static str {
         match self {
             Self::LeftAndRight => "left & right",
+            Self::CenterLeftAndRight => "center left & right",
             Self::UpAndDown => "up & down",
+            Self::CenterUpAndDown => "center up & down",
             other => other.as_config_value(),
         }
     }

@@ -357,12 +357,14 @@ pub fn render_audio_visualization(
     drop(guard);
 
     let bar_axis_len = match direction {
-        VisualizerDirection::Up | VisualizerDirection::Down | VisualizerDirection::UpAndDown => {
-            rect.width
-        }
+        VisualizerDirection::Up
+        | VisualizerDirection::Down
+        | VisualizerDirection::UpAndDown
+        | VisualizerDirection::CenterUpAndDown => rect.width,
         VisualizerDirection::Left
         | VisualizerDirection::Right
-        | VisualizerDirection::LeftAndRight => rect.height,
+        | VisualizerDirection::LeftAndRight
+        | VisualizerDirection::CenterLeftAndRight => rect.height,
     };
     let num_bars = visible_bar_count(bar_axis_len, bar_thickness, bar_gap);
     if num_bars == 0 {
@@ -438,19 +440,59 @@ pub fn render_audio_visualization(
                 length_ranges,
                 true,
             );
-            let mid = rect.width / 2;
-            let left_rect = Rect {
-                x: rect.x,
-                y: rect.y,
-                width: mid,
-                height: rect.height,
-            };
-            let right_rect = Rect {
-                x: rect.x.saturating_add(mid),
-                y: rect.y,
-                width: rect.width.saturating_sub(mid),
-                height: rect.height,
-            };
+            // Edge-anchored: same reach as singular Left/Right across the full width.
+            render_horizontal_left(
+                frame,
+                rect,
+                theme,
+                &left_bars,
+                bar_thickness,
+                bar_gap,
+                mid_threshold,
+                high_threshold,
+                peak_threshold,
+            );
+            render_horizontal_right(
+                frame,
+                rect,
+                theme,
+                &right_bars,
+                bar_thickness,
+                bar_gap,
+                mid_threshold,
+                high_threshold,
+                peak_threshold,
+            );
+        }
+        VisualizerDirection::CenterLeftAndRight => {
+            let (left_mode, right_mode) = dual_side_modes(mode);
+            let left_bars = build_rendered_bars(
+                &values,
+                num_bars,
+                left_mode,
+                frequency_bias,
+                center_offset,
+                display_decay,
+                peak_norm,
+                sensitivity,
+                thresholds,
+                length_ranges,
+                true,
+            );
+            let right_bars = build_rendered_bars(
+                &values,
+                num_bars,
+                right_mode,
+                frequency_bias,
+                center_offset,
+                display_decay,
+                peak_norm,
+                sensitivity,
+                thresholds,
+                length_ranges,
+                true,
+            );
+            let (left_rect, right_rect) = split_horizontal_center(rect);
             if left_rect.width > 0 {
                 render_horizontal_left(
                     frame,
@@ -506,19 +548,59 @@ pub fn render_audio_visualization(
                 length_ranges,
                 false,
             );
-            let mid = rect.height / 2;
-            let up_rect = Rect {
-                x: rect.x,
-                y: rect.y.saturating_add(mid),
-                width: rect.width,
-                height: rect.height.saturating_sub(mid),
-            };
-            let down_rect = Rect {
-                x: rect.x,
-                y: rect.y,
-                width: rect.width,
-                height: mid,
-            };
+            // Edge-anchored: same reach as singular Up/Down across the full height.
+            render_vertical_up(
+                frame,
+                rect,
+                theme,
+                &up_bars,
+                bar_thickness,
+                bar_gap,
+                mid_threshold,
+                high_threshold,
+                peak_threshold,
+            );
+            render_vertical_down(
+                frame,
+                rect,
+                theme,
+                &down_bars,
+                bar_thickness,
+                bar_gap,
+                mid_threshold,
+                high_threshold,
+                peak_threshold,
+            );
+        }
+        VisualizerDirection::CenterUpAndDown => {
+            let (up_mode, down_mode) = dual_side_modes(mode);
+            let up_bars = build_rendered_bars(
+                &values,
+                num_bars,
+                up_mode,
+                frequency_bias,
+                center_offset,
+                display_decay,
+                peak_norm,
+                sensitivity,
+                thresholds,
+                length_ranges,
+                false,
+            );
+            let down_bars = build_rendered_bars(
+                &values,
+                num_bars,
+                down_mode,
+                frequency_bias,
+                center_offset,
+                display_decay,
+                peak_norm,
+                sensitivity,
+                thresholds,
+                length_ranges,
+                false,
+            );
+            let (up_rect, down_rect) = split_vertical_center(rect);
             if up_rect.height > 0 {
                 render_vertical_up(
                     frame,
@@ -547,6 +629,41 @@ pub fn render_audio_visualization(
             }
         }
     }
+}
+
+fn split_horizontal_center(rect: Rect) -> (Rect, Rect) {
+    let mid = rect.width / 2;
+    let left = Rect {
+        x: rect.x,
+        y: rect.y,
+        width: mid,
+        height: rect.height,
+    };
+    let right = Rect {
+        x: rect.x.saturating_add(mid),
+        y: rect.y,
+        width: rect.width.saturating_sub(mid),
+        height: rect.height,
+    };
+    (left, right)
+}
+
+fn split_vertical_center(rect: Rect) -> (Rect, Rect) {
+    // Up sits in the top half (grows up from the midline); Down in the bottom half.
+    let mid = rect.height / 2;
+    let up = Rect {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: mid,
+    };
+    let down = Rect {
+        x: rect.x,
+        y: rect.y.saturating_add(mid),
+        width: rect.width,
+        height: rect.height.saturating_sub(mid),
+    };
+    (up, down)
 }
 
 fn dual_side_modes(mode: VisualizerMode) -> (VisualizerMode, VisualizerMode) {
@@ -675,7 +792,10 @@ fn render_single_direction(
             high_threshold,
             peak_threshold,
         ),
-        VisualizerDirection::LeftAndRight | VisualizerDirection::UpAndDown => {}
+        VisualizerDirection::LeftAndRight
+        | VisualizerDirection::CenterLeftAndRight
+        | VisualizerDirection::UpAndDown
+        | VisualizerDirection::CenterUpAndDown => {}
     }
 }
 

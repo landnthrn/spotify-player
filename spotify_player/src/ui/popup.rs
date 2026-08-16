@@ -305,7 +305,12 @@ fn render_visualizer_menu_popup(
         &mut menu.placement_state,
     );
 
-    let footer = if theme.app().bg.is_none() {
+    let down_highlighted = menu
+        .direction_state
+        .selected()
+        .and_then(|id| config::VisualizerDirection::ALL.get(id))
+        .is_some_and(|direction| *direction == config::VisualizerDirection::Down);
+    let footer = if theme.app().bg.is_none() && down_highlighted {
         "Down direction won't appear properly on a transparent theme, thank unicode.   r - refresh"
     } else {
         "r - refresh"

@@ -373,7 +373,7 @@ pub fn render_audio_visualization(
         VisualizerDirection::Left | VisualizerDirection::Right
     );
 
-    let bars: Vec<RenderedBar> =
+    let mut bars: Vec<RenderedBar> =
         shape_visualizer_values(&values, num_bars, mode, frequency_bias, center_offset)
             .into_iter()
             .map(|value| {
@@ -397,6 +397,10 @@ pub fn render_audio_visualization(
                 RenderedBar { length, intensity }
             })
             .collect();
+
+    if horizontal {
+        soften_horizontal_bar_slope(&mut bars);
+    }
 
     match direction {
         VisualizerDirection::Up => render_vertical_up(
@@ -547,8 +551,8 @@ fn shifted_center(len: usize, center_offset: i16) -> f32 {
         return 0.0;
     }
 
-    let default_center_shift = if len > 2 { 1.0 } else { 0.0 };
-    let base_center = (len.saturating_sub(1) as f32) / 2.0 - default_center_shift;
+    // True midpoint across the visible bars (odd → one center bar, even → shared by two).
+    let base_center = (len.saturating_sub(1) as f32) / 2.0;
     (base_center + center_offset as f32).clamp(0.0, len.saturating_sub(1) as f32)
 }
 
@@ -823,12 +827,36 @@ fn normalized_ticks(norm: f32, max_ticks: u32) -> u16 {
 // Compress only the upper length range; Up/Down never call this.
 fn soften_horizontal_bar_length(length: f32) -> f32 {
     let length = length.clamp(0.0, 1.0);
-    const KEEP: f32 = 0.5;
-    const COMPRESS: f32 = 0.45;
+    const KEEP: f32 = 0.45;
+    const COMPRESS: f32 = 0.55;
     if length <= KEEP {
         length
     } else {
         KEEP + (length - KEEP) * COMPRESS
+    }
+}
+
+// Blend neighboring Left/Right lengths so peaks fall off as a slope, not a cliff.
+fn soften_horizontal_bar_slope(bars: &mut [RenderedBar]) {
+    if bars.len() < 2 {
+        return;
+    }
+
+    for _ in 0..2 {
+        let lengths: Vec<f32> = bars.iter().map(|bar| bar.length).collect();
+        for (i, bar) in bars.iter_mut().enumerate() {
+            let mut sum = lengths[i] * 2.0;
+            let mut weight = 2.0;
+            if i > 0 {
+                sum += lengths[i - 1];
+                weight += 1.0;
+            }
+            if i + 1 < lengths.len() {
+                sum += lengths[i + 1];
+                weight += 1.0;
+            }
+            bar.length = sum / weight;
+        }
     }
 }
 

@@ -305,8 +305,13 @@ fn render_visualizer_menu_popup(
         &mut menu.placement_state,
     );
 
+    let footer = if theme.app().bg.is_none() {
+        "Down direction won't appear properly on a transparent theme, thank unicode.   r - refresh"
+    } else {
+        "r - refresh"
+    };
     frame.render_widget(
-        Paragraph::new("r - refresh").alignment(ratatui::layout::Alignment::Right),
+        Paragraph::new(footer).alignment(ratatui::layout::Alignment::Right),
         chunks[1],
     );
 

@@ -659,8 +659,8 @@ fn build_rendered_bars(
                         }
                     }
                 }
-                // Peak Reach overlay after Behavior mapping.
-                length = (length * peak_reach.length_scale()).clamp(0.0, 1.0);
+                // Peak Reach: map loud peaks to ~1/3, ~2/3, or nearly full.
+                length = apply_peak_reach(length, peak_reach);
                 if matches!(vertical_dual_length, VerticalDualLength::Cap) {
                     length = cap_edge_meet_bar_length(length, peak_reach);
                 }
@@ -1136,47 +1136,78 @@ fn boost_vertical_dual_bar_length(length: f32) -> f32 {
     length.clamp(0.0, 1.0).powf(0.72)
 }
 
+// Remap bar travel so loud peaks land near low/medium/high fractions of the box.
+fn apply_peak_reach(length: f32, peak_reach: VisualizerPeakReach) -> f32 {
+    (length.clamp(0.0, 1.0) * peak_reach.length_scale()).clamp(0.0, 1.0)
+}
+
 // Edge duals that grow toward each other; keep quieter bars, cap peaks so they don't cross.
-// Medium keeps a remap. High clips near the midline so loud bars can get close.
 fn cap_edge_meet_bar_length(length: f32, peak_reach: VisualizerPeakReach) -> f32 {
     let length = length.clamp(0.0, 1.0);
-    const KEEP: f32 = 0.22;
+    const KEEP: f32 = 0.12;
     let max = peak_reach.meet_cap_max();
-    match peak_reach {
-        VisualizerPeakReach::High => length.min(max),
-        VisualizerPeakReach::Low | VisualizerPeakReach::Medium => {
-            if length <= KEEP {
-                length
-            } else {
-                KEEP + (length - KEEP) / (1.0 - KEEP) * (max - KEEP)
-            }
-        }
+    if length <= KEEP {
+        length
+    } else {
+        KEEP + (length - KEEP) / (1.0 - KEEP) * (max - KEEP)
     }
 }
 
-// Widen the peak zone by lifting neighbors toward taller bars. Never shorten a peak.
+// Reshape peak zones to narrow / regular / wide. Peaks keep Reach height; sides follow the hill.
 fn apply_peak_spread(bars: &mut [RenderedBar], spread: VisualizerPeakSpread) {
-    if bars.len() < 2 {
+    let n = bars.len();
+    if n < 2 {
         return;
     }
 
-    let (radius, strength) = spread.widen_params();
     let lengths: Vec<f32> = bars.iter().map(|bar| bar.length).collect();
-
-    for (i, bar) in bars.iter_mut().enumerate() {
-        let mut raised = lengths[i];
-        for distance in 1..=radius {
-            let falloff = strength * (1.0 - (distance as f32 - 1.0) / radius as f32);
-            if i >= distance {
-                let gap = (lengths[i - distance] - lengths[i]).max(0.0);
-                raised = raised.max(lengths[i] + gap * falloff);
-            }
-            if i + distance < lengths.len() {
-                let gap = (lengths[i + distance] - lengths[i]).max(0.0);
-                raised = raised.max(lengths[i] + gap * falloff);
+    let mut peaks = Vec::new();
+    for i in 0..n {
+        let left = if i > 0 { lengths[i - 1] } else { 0.0 };
+        let right = if i + 1 < n { lengths[i + 1] } else { 0.0 };
+        if lengths[i] >= left && lengths[i] >= right && lengths[i] > 0.04 {
+            peaks.push(i);
+        }
+    }
+    if peaks.is_empty() {
+        if let Some((idx, _)) = lengths
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        {
+            if lengths[idx] > 0.04 {
+                peaks.push(idx);
             }
         }
-        bar.length = raised.max(lengths[i]).clamp(0.0, 1.0);
+    }
+    if peaks.is_empty() {
+        return;
+    }
+
+    let radius = ((n as f32) * spread.half_width_fraction()).round().max(1.0) as usize;
+    let side_floor = spread.side_floor();
+    let mut envelope = vec![0.0f32; n];
+
+    for &peak_idx in &peaks {
+        let peak_h = lengths[peak_idx];
+        let start = peak_idx.saturating_sub(radius);
+        let end = (peak_idx + radius).min(n - 1);
+        for i in start..=end {
+            let dist = peak_idx.abs_diff(i) as f32;
+            let t = (dist / radius as f32).clamp(0.0, 1.0);
+            // Smooth falloff: full at peak, zero at radius edge.
+            let falloff = (1.0 - t) * (1.0 - t);
+            envelope[i] = envelope[i].max(peak_h * falloff);
+        }
+    }
+
+    for (i, bar) in bars.iter_mut().enumerate() {
+        let kept_side = lengths[i] * side_floor;
+        let mut next = envelope[i].max(kept_side);
+        if peaks.contains(&i) {
+            next = next.max(lengths[i]);
+        }
+        bar.length = next.clamp(0.0, 1.0);
     }
 }
 

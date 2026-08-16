@@ -418,17 +418,19 @@ impl VisualizerPeakReach {
     }
 
     pub fn length_scale(self) -> f32 {
+        // Loud peaks land near these fractions of the box after remap.
         match self {
-            Self::Low => 0.75,
-            Self::Medium => 0.96,
-            Self::High => 1.0,
+            Self::Low => 1.0 / 3.0,
+            Self::Medium => 2.0 / 3.0,
+            Self::High => 0.98,
         }
     }
 
     pub fn meet_cap_max(self) -> f32 {
+        // Edge duals: spaced toward the midline without overlapping.
         match self {
-            Self::Low => 0.34,
-            Self::Medium => 0.45,
+            Self::Low => 0.20,
+            Self::Medium => 0.35,
             Self::High => 0.49,
         }
     }
@@ -462,12 +464,21 @@ impl VisualizerPeakSpread {
         self.as_config_value()
     }
 
-    /// How many bars beside a peak get lifted, and how strongly (outer bars use a falloff).
-    pub fn widen_params(self) -> (usize, f32) {
+    /// Half-width of each peak zone as a fraction of the bar count.
+    pub fn half_width_fraction(self) -> f32 {
         match self {
-            Self::Narrow => (1, 0.40),
-            Self::Regular => (3, 0.62),
-            Self::Wide => (6, 0.88),
+            Self::Narrow => 0.05,
+            Self::Regular => 0.14,
+            Self::Wide => 0.30,
+        }
+    }
+
+    /// How much of the original non-peak energy to keep under the hill.
+    pub fn side_floor(self) -> f32 {
+        match self {
+            Self::Narrow => 0.12,
+            Self::Regular => 0.32,
+            Self::Wide => 0.55,
         }
     }
 }

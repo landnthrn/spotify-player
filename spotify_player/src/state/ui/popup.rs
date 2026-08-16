@@ -188,54 +188,61 @@ impl VisualizerMenuState {
     }
 
     pub fn behavior_items(&self) -> Vec<String> {
+        let current = &self.original_visualizer.behavior_preset;
         self.config
             .behavior_presets
             .iter()
-            .map(|preset| preset.name.clone())
+            .map(|preset| star_if_current(&preset.name, preset.name == *current))
             .collect()
     }
 
     pub fn look_items(&self) -> Vec<String> {
+        let current = &self.original_visualizer.look_preset;
         self.config
             .look_presets
             .iter()
-            .map(|preset| preset.name.clone())
+            .map(|preset| star_if_current(&preset.name, preset.name == *current))
             .collect()
     }
 
     pub fn placement_items(&self) -> Vec<String> {
+        let current = &self.original_visualizer.placement_preset;
         self.config
             .placement_presets
             .iter()
-            .map(|preset| preset.name.clone())
+            .map(|preset| star_if_current(&preset.name, preset.name == *current))
             .collect()
     }
 
     pub fn peak_reach_items(&self) -> Vec<String> {
+        let current = self.original_visualizer.visualizer_peak_reach;
         VisualizerPeakReach::ALL
             .iter()
-            .map(|reach| reach.as_menu_label().to_string())
+            .map(|reach| star_if_current(reach.as_menu_label(), *reach == current))
             .collect()
     }
 
     pub fn peak_spread_items(&self) -> Vec<String> {
+        let current = self.original_visualizer.visualizer_peak_spread;
         VisualizerPeakSpread::ALL
             .iter()
-            .map(|spread| spread.as_menu_label().to_string())
+            .map(|spread| star_if_current(spread.as_menu_label(), *spread == current))
             .collect()
     }
 
     pub fn mode_items(&self) -> Vec<String> {
+        let current = self.original_visualizer.visualizer_mode;
         self.mode_choices()
             .into_iter()
-            .map(|mode| mode.as_menu_label().to_string())
+            .map(|mode| star_if_current(mode.as_menu_label(), mode == current))
             .collect()
     }
 
     pub fn direction_items(&self) -> Vec<String> {
+        let current = self.original_visualizer.visualizer_direction;
         VisualizerDirection::ALL
             .iter()
-            .map(|direction| direction.as_menu_label().to_string())
+            .map(|direction| star_if_current(direction.as_menu_label(), *direction == current))
             .collect()
     }
 
@@ -549,5 +556,13 @@ impl ActionListItem {
                 actions.iter().map(|a| format!("{a:?}")).collect::<Vec<_>>()
             }
         }
+    }
+}
+
+fn star_if_current(label: &str, is_current: bool) -> String {
+    if is_current {
+        format!("* {label}")
+    } else {
+        label.to_string()
     }
 }

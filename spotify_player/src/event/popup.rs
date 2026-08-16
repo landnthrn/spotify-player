@@ -452,6 +452,7 @@ fn handle_command_for_visualizer_menu_popup(
             }
             Command::ChooseSelected => {
                 let preview = menu.preview_preset();
+                menu.original_visualizer = preview.clone();
                 MenuOutcome::Persist(menu.config.clone(), preview)
             }
             #[cfg(feature = "streaming")]

@@ -400,6 +400,7 @@ pub fn render_audio_visualization(
                 thresholds,
                 length_ranges,
                 horizontal,
+                false,
             );
             render_single_direction(
                 frame,
@@ -426,6 +427,7 @@ pub fn render_audio_visualization(
                 thresholds,
                 length_ranges,
                 true,
+                false,
             );
             let right_bars = build_rendered_bars(
                 &values,
@@ -439,6 +441,7 @@ pub fn render_audio_visualization(
                 thresholds,
                 length_ranges,
                 true,
+                false,
             );
             // Edge-anchored: same reach as singular Left/Right across the full width.
             render_horizontal_right(
@@ -478,6 +481,7 @@ pub fn render_audio_visualization(
                 thresholds,
                 length_ranges,
                 true,
+                false,
             );
             let right_bars = build_rendered_bars(
                 &values,
@@ -491,6 +495,7 @@ pub fn render_audio_visualization(
                 thresholds,
                 length_ranges,
                 true,
+                false,
             );
             let (left_rect, right_rect) = split_horizontal_center(rect);
             if left_rect.width > 0 {
@@ -534,6 +539,7 @@ pub fn render_audio_visualization(
                 thresholds,
                 length_ranges,
                 false,
+                true,
             );
             let down_bars = build_rendered_bars(
                 &values,
@@ -547,8 +553,9 @@ pub fn render_audio_visualization(
                 thresholds,
                 length_ranges,
                 false,
+                true,
             );
-            // Edge-anchored: Down first, then Up on top so joins keep Up's normal cells.
+            // Edge-anchored: Down first (solid rows only), then Up on top.
             render_vertical_down(
                 frame,
                 rect,
@@ -559,6 +566,7 @@ pub fn render_audio_visualization(
                 mid_threshold,
                 high_threshold,
                 peak_threshold,
+                true,
             );
             render_vertical_up(
                 frame,
@@ -586,6 +594,7 @@ pub fn render_audio_visualization(
                 thresholds,
                 length_ranges,
                 false,
+                true,
             );
             let down_bars = build_rendered_bars(
                 &values,
@@ -599,6 +608,7 @@ pub fn render_audio_visualization(
                 thresholds,
                 length_ranges,
                 false,
+                true,
             );
             let (up_rect, down_rect) = split_vertical_center(rect);
             if up_rect.height > 0 {
@@ -625,6 +635,7 @@ pub fn render_audio_visualization(
                     mid_threshold,
                     high_threshold,
                     peak_threshold,
+                    true,
                 );
             }
         }
@@ -650,18 +661,21 @@ fn split_horizontal_center(rect: Rect) -> (Rect, Rect) {
 
 fn split_vertical_center(rect: Rect) -> (Rect, Rect) {
     // Up sits in the top half (grows up from the midline); Down in the bottom half.
-    let mid = rect.height / 2;
+    // On odd heights, give the extra row to Up so the shared hinge sits on true center
+    // (otherwise the unit reads a row too high).
+    let up_height = (rect.height + 1) / 2;
+    let down_height = rect.height / 2;
     let up = Rect {
         x: rect.x,
         y: rect.y,
         width: rect.width,
-        height: mid,
+        height: up_height,
     };
     let down = Rect {
         x: rect.x,
-        y: rect.y.saturating_add(mid),
+        y: rect.y.saturating_add(up_height),
         width: rect.width,
-        height: rect.height.saturating_sub(mid),
+        height: down_height,
     };
     (up, down)
 }
@@ -695,6 +709,7 @@ fn build_rendered_bars(
         VisualizerLengthRange,
     ),
     horizontal: bool,
+    vertical_dual: bool,
 ) -> Vec<RenderedBar> {
     let (mid_threshold, high_threshold, peak_threshold) = thresholds;
     let (low_length_range, mid_length_range, high_length_range, peak_length_range) = length_ranges;
@@ -723,6 +738,8 @@ fn build_rendered_bars(
                 );
                 if horizontal {
                     length = soften_horizontal_bar_length(length);
+                } else if vertical_dual {
+                    length = boost_vertical_dual_bar_length(length);
                 }
 
                 RenderedBar { length, intensity }
@@ -769,6 +786,7 @@ fn render_single_direction(
             mid_threshold,
             high_threshold,
             peak_threshold,
+            false,
         ),
         VisualizerDirection::Left => render_horizontal_left(
             frame,
@@ -1004,6 +1022,7 @@ fn render_vertical_down(
     mid_threshold: f32,
     high_threshold: f32,
     peak_threshold: f32,
+    solid_rows_only: bool,
 ) {
     let bg = background_color(theme);
     let max_ticks = u32::from(rect.height) * 8;
@@ -1029,7 +1048,8 @@ fn render_vertical_down(
             let y = rect.y + row_offset;
             let symbol = if row_offset < full_rows {
                 Some((bar::FULL, color, bg))
-            } else if row_offset == full_rows && partial_ticks > 0 {
+            } else if !solid_rows_only && row_offset == full_rows && partial_ticks > 0 {
+                // Color-swap tips punch background holes when Up/Down meet; skip in duals.
                 Some(top_bar_cell(partial_ticks, color, bg))
             } else {
                 None
@@ -1191,6 +1211,11 @@ fn soften_horizontal_bar_length(length: f32) -> f32 {
     } else {
         KEEP + (length - KEEP) * COMPRESS
     }
+}
+
+// Dual vertical modes share height; ease mid lengths up so bars use more of the available travel.
+fn boost_vertical_dual_bar_length(length: f32) -> f32 {
+    length.clamp(0.0, 1.0).powf(0.72)
 }
 
 // Blend neighboring Left/Right lengths so peaks fall off as a slope, not a cliff.

@@ -259,9 +259,8 @@ fn render_visualizer_menu_popup(
     ])
     .spacing(1)
     .split(chunks[0]);
-    let peak_rows = Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .spacing(1)
-        .split(columns[1]);
+    // Equal fill so Reach and Spread boxes match in height (no gap stealing a row).
+    let peak_rows = Layout::vertical([Constraint::Fill(1), Constraint::Fill(1)]).split(columns[1]);
 
     render_visualizer_menu_column(
         frame,

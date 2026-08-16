@@ -8,7 +8,7 @@ placement_preset = "vislzr_mr_bar_b_info_tr"
 visualizer_mode = "multi_peak_l_c_r"
 visualizer_direction = "up"
 visualizer_peak_reach = "medium"
-visualizer_peak_spread = "medium"
+visualizer_peak_spread = "regular"
 
 [[behavior_presets]]
 name = "balanced"
@@ -381,7 +381,7 @@ impl VisualizerPreset {
             visualizer_mode: app_config.visualizer_mode,
             visualizer_direction: app_config.visualizer_direction,
             visualizer_peak_reach: VisualizerPeakReach::Medium,
-            visualizer_peak_spread: VisualizerPeakSpread::Medium,
+            visualizer_peak_spread: VisualizerPeakSpread::Regular,
             visualizer_frequency_bias: app_config.visualizer_frequency_bias,
             visualizer_sensitivity: app_config.visualizer_sensitivity,
             visualizer_rise_speed: app_config.visualizer_rise_speed,
@@ -423,7 +423,7 @@ impl Default for ActiveVisualizerSelection {
             visualizer_mode: VisualizerMode::LeftBass,
             visualizer_direction: VisualizerDirection::Up,
             visualizer_peak_reach: VisualizerPeakReach::Medium,
-            visualizer_peak_spread: VisualizerPeakSpread::Medium,
+            visualizer_peak_spread: VisualizerPeakSpread::Regular,
         }
     }
 }

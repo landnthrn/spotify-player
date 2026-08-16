@@ -1154,52 +1154,29 @@ fn cap_edge_meet_bar_length(length: f32, peak_reach: VisualizerPeakReach) -> f32
     }
 }
 
-// Widen or tighten how a peak falls into neighboring bars. Medium keeps the original slope.
+// Widen the peak zone by lifting neighbors toward taller bars. Never shorten a peak.
 fn apply_peak_spread(bars: &mut [RenderedBar], spread: VisualizerPeakSpread) {
     if bars.len() < 2 {
         return;
     }
 
-    let (bleed_passes, bleed, radius, blur_passes, self_weight, neighbor_weight) = match spread {
-        VisualizerPeakSpread::Near => (1, 0.10, 1, 1, 5.0, 0.45),
-        VisualizerPeakSpread::Medium => (0, 0.0, 1, 2, 2.0, 1.0),
-        VisualizerPeakSpread::Far => (3, 0.40, 2, 3, 1.0, 1.15),
-    };
+    let (radius, strength) = spread.widen_params();
+    let lengths: Vec<f32> = bars.iter().map(|bar| bar.length).collect();
 
-    for _ in 0..bleed_passes {
-        let lengths: Vec<f32> = bars.iter().map(|bar| bar.length).collect();
-        for (i, bar) in bars.iter_mut().enumerate() {
-            let mut raised = lengths[i];
-            for distance in 1..=radius {
-                let falloff = 1.0 / distance as f32;
-                if i >= distance {
-                    let gap = (lengths[i - distance] - lengths[i]).max(0.0);
-                    raised = raised.max(lengths[i] + gap * bleed * falloff);
-                }
-                if i + distance < lengths.len() {
-                    let gap = (lengths[i + distance] - lengths[i]).max(0.0);
-                    raised = raised.max(lengths[i] + gap * bleed * falloff);
-                }
+    for (i, bar) in bars.iter_mut().enumerate() {
+        let mut raised = lengths[i];
+        for distance in 1..=radius {
+            let falloff = strength * (1.0 - (distance as f32 - 1.0) / radius as f32);
+            if i >= distance {
+                let gap = (lengths[i - distance] - lengths[i]).max(0.0);
+                raised = raised.max(lengths[i] + gap * falloff);
             }
-            bar.length = raised.clamp(0.0, 1.0);
+            if i + distance < lengths.len() {
+                let gap = (lengths[i + distance] - lengths[i]).max(0.0);
+                raised = raised.max(lengths[i] + gap * falloff);
+            }
         }
-    }
-
-    for _ in 0..blur_passes.max(1) {
-        let lengths: Vec<f32> = bars.iter().map(|bar| bar.length).collect();
-        for (i, bar) in bars.iter_mut().enumerate() {
-            let mut sum = lengths[i] * self_weight;
-            let mut weight = self_weight;
-            if i > 0 {
-                sum += lengths[i - 1] * neighbor_weight;
-                weight += neighbor_weight;
-            }
-            if i + 1 < lengths.len() {
-                sum += lengths[i + 1] * neighbor_weight;
-                weight += neighbor_weight;
-            }
-            bar.length = sum / weight;
-        }
+        bar.length = raised.max(lengths[i]).clamp(0.0, 1.0);
     }
 }
 

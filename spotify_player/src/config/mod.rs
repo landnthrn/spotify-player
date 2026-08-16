@@ -420,15 +420,15 @@ impl VisualizerPeakReach {
     pub fn length_scale(self) -> f32 {
         match self {
             Self::Low => 0.75,
-            Self::Medium => 0.90,
-            Self::High => 1.12,
+            Self::Medium => 0.96,
+            Self::High => 1.0,
         }
     }
 
     pub fn meet_cap_max(self) -> f32 {
         match self {
             Self::Low => 0.34,
-            Self::Medium => 0.44,
+            Self::Medium => 0.45,
             Self::High => 0.49,
         }
     }
@@ -437,27 +437,38 @@ impl VisualizerPeakReach {
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum VisualizerPeakSpread {
-    #[serde(alias = "shallow")]
-    Near,
+    #[serde(alias = "near", alias = "shallow")]
+    Narrow,
     #[default]
-    Medium,
-    Far,
+    #[serde(alias = "medium")]
+    Regular,
+    #[serde(alias = "far")]
+    Wide,
 }
 config_parser_impl!(VisualizerPeakSpread);
 
 impl VisualizerPeakSpread {
-    pub const ALL: [Self; 3] = [Self::Near, Self::Medium, Self::Far];
+    pub const ALL: [Self; 3] = [Self::Narrow, Self::Regular, Self::Wide];
 
     pub fn as_config_value(self) -> &'static str {
         match self {
-            Self::Near => "near",
-            Self::Medium => "medium",
-            Self::Far => "far",
+            Self::Narrow => "narrow",
+            Self::Regular => "regular",
+            Self::Wide => "wide",
         }
     }
 
     pub fn as_menu_label(self) -> &'static str {
         self.as_config_value()
+    }
+
+    /// How many bars beside a peak get lifted, and how strongly (outer bars use a falloff).
+    pub fn widen_params(self) -> (usize, f32) {
+        match self {
+            Self::Narrow => (1, 0.40),
+            Self::Regular => (3, 0.62),
+            Self::Wide => (6, 0.88),
+        }
     }
 }
 

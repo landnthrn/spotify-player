@@ -855,6 +855,10 @@ fn handle_global_command(
                 visualizer_config.active.visualizer_mode = ui.visualizer_preset.visualizer_mode;
                 visualizer_config.active.visualizer_direction =
                     ui.visualizer_preset.visualizer_direction;
+                visualizer_config.active.visualizer_peak_reach =
+                    ui.visualizer_preset.visualizer_peak_reach;
+                visualizer_config.active.visualizer_peak_spread =
+                    ui.visualizer_preset.visualizer_peak_spread;
             }
             ui.popup = Some(PopupState::VisualizerMenu(VisualizerMenuState::new(
                 visualizer_config,

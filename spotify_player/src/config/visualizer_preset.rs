@@ -7,6 +7,8 @@ look_preset = "boxed"
 placement_preset = "vislzr_mr_bar_b_info_tr"
 visualizer_mode = "multi_peak_l_c_r"
 visualizer_direction = "up"
+visualizer_peak_reach = "medium"
+visualizer_peak_spread = "medium"
 
 [[behavior_presets]]
 name = "balanced"
@@ -113,7 +115,8 @@ visualizer_show_on_pause = true
 
 use super::{
     AppConfig, ProgressBarPlacement, TrackInfoPlacement, VisualizerDirection,
-    VisualizerLengthRange, VisualizerMode, VisualizerPlacement,
+    VisualizerLengthRange, VisualizerMode, VisualizerPeakReach, VisualizerPeakSpread,
+    VisualizerPlacement,
 };
 
 fn default_visualizer_placement_presets() -> Vec<VisualizerPlacementPreset> {
@@ -200,6 +203,10 @@ pub struct ActiveVisualizerSelection {
     pub placement_preset: String,
     pub visualizer_mode: VisualizerMode,
     pub visualizer_direction: VisualizerDirection,
+    #[serde(default)]
+    pub visualizer_peak_reach: VisualizerPeakReach,
+    #[serde(default)]
+    pub visualizer_peak_spread: VisualizerPeakSpread,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -245,6 +252,10 @@ pub struct VisualizerPreset {
     pub placement_preset: String,
     pub visualizer_mode: VisualizerMode,
     pub visualizer_direction: VisualizerDirection,
+    #[serde(default)]
+    pub visualizer_peak_reach: VisualizerPeakReach,
+    #[serde(default)]
+    pub visualizer_peak_spread: VisualizerPeakSpread,
     pub visualizer_frequency_bias: f32,
     pub visualizer_sensitivity: f32,
     pub visualizer_rise_speed: f32,
@@ -319,6 +330,8 @@ impl VisualizerConfigFile {
             placement_preset: placement.name.clone(),
             visualizer_mode: self.active.visualizer_mode,
             visualizer_direction: self.active.visualizer_direction,
+            visualizer_peak_reach: self.active.visualizer_peak_reach,
+            visualizer_peak_spread: self.active.visualizer_peak_spread,
             visualizer_frequency_bias: behavior.visualizer_frequency_bias,
             visualizer_sensitivity: behavior.visualizer_sensitivity,
             visualizer_rise_speed: behavior.visualizer_rise_speed,
@@ -367,6 +380,8 @@ impl VisualizerPreset {
             placement_preset: "legacy".to_string(),
             visualizer_mode: app_config.visualizer_mode,
             visualizer_direction: app_config.visualizer_direction,
+            visualizer_peak_reach: VisualizerPeakReach::Medium,
+            visualizer_peak_spread: VisualizerPeakSpread::Medium,
             visualizer_frequency_bias: app_config.visualizer_frequency_bias,
             visualizer_sensitivity: app_config.visualizer_sensitivity,
             visualizer_rise_speed: app_config.visualizer_rise_speed,
@@ -407,6 +422,8 @@ impl Default for ActiveVisualizerSelection {
             placement_preset: "vislzr_b_bar_b_info_tr".to_string(),
             visualizer_mode: VisualizerMode::LeftBass,
             visualizer_direction: VisualizerDirection::Up,
+            visualizer_peak_reach: VisualizerPeakReach::Medium,
+            visualizer_peak_spread: VisualizerPeakSpread::Medium,
         }
     }
 }

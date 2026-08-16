@@ -22,6 +22,8 @@ fn load_visualizer_menu_state(
     if !visualizer_config.loaded_from_file {
         visualizer_config.active.visualizer_mode = current_visualizer.visualizer_mode;
         visualizer_config.active.visualizer_direction = current_visualizer.visualizer_direction;
+        visualizer_config.active.visualizer_peak_reach = current_visualizer.visualizer_peak_reach;
+        visualizer_config.active.visualizer_peak_spread = current_visualizer.visualizer_peak_spread;
     }
 
     let preview = visualizer_config.active_visualizer_preset();
@@ -457,6 +459,8 @@ fn handle_command_for_visualizer_menu_popup(
                 let focus = menu.focus;
                 let original_visualizer = menu.original_visualizer.clone();
                 let behavior_id = menu.behavior_state.selected().unwrap_or_default();
+                let peak_reach_id = menu.peak_reach_state.selected().unwrap_or(1);
+                let peak_spread_id = menu.peak_spread_state.selected().unwrap_or(1);
                 let look_id = menu.look_state.selected().unwrap_or_default();
                 let placement_id = menu.placement_state.selected().unwrap_or_default();
                 let mode_id = menu.mode_state.selected().unwrap_or_default();
@@ -468,6 +472,16 @@ fn handle_command_for_visualizer_menu_popup(
                     reloaded
                         .behavior_state
                         .select(Some(behavior_id.min(reloaded.behavior_items().len() - 1)));
+                }
+                if !reloaded.peak_reach_items().is_empty() {
+                    reloaded.peak_reach_state.select(Some(
+                        peak_reach_id.min(reloaded.peak_reach_items().len() - 1),
+                    ));
+                }
+                if !reloaded.peak_spread_items().is_empty() {
+                    reloaded.peak_spread_state.select(Some(
+                        peak_spread_id.min(reloaded.peak_spread_items().len() - 1),
+                    ));
                 }
                 if !reloaded.look_items().is_empty() {
                     reloaded

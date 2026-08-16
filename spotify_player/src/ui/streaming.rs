@@ -1,5 +1,8 @@
 use crate::{
-    config::{self, Theme, VisualizerDirection, VisualizerLengthRange, VisualizerMode},
+    config::{
+        self, Theme, VisualizerDirection, VisualizerLengthRange, VisualizerMode,
+        VisualizerPeakReach, VisualizerPeakSpread,
+    },
     state::SharedState,
 };
 use librespot_playback::{
@@ -378,6 +381,26 @@ pub fn render_audio_visualization(
         high_length_range,
         peak_length_range,
     );
+    let peak_reach = preset.visualizer_peak_reach;
+    let peak_spread = preset.visualizer_peak_spread;
+    let bars_for = |mode, horizontal, vertical_dual_length| {
+        build_rendered_bars(
+            &values,
+            num_bars,
+            mode,
+            frequency_bias,
+            center_offset,
+            display_decay,
+            peak_norm,
+            sensitivity,
+            thresholds,
+            length_ranges,
+            horizontal,
+            vertical_dual_length,
+            peak_reach,
+            peak_spread,
+        )
+    };
 
     match direction {
         VisualizerDirection::Up
@@ -388,20 +411,7 @@ pub fn render_audio_visualization(
                 direction,
                 VisualizerDirection::Left | VisualizerDirection::Right
             );
-            let bars = build_rendered_bars(
-                &values,
-                num_bars,
-                mode,
-                frequency_bias,
-                center_offset,
-                display_decay,
-                peak_norm,
-                sensitivity,
-                thresholds,
-                length_ranges,
-                horizontal,
-                VerticalDualLength::None,
-            );
+            let bars = bars_for(mode, horizontal, VerticalDualLength::None);
             render_single_direction(
                 frame,
                 direction,
@@ -415,34 +425,8 @@ pub fn render_audio_visualization(
         }
         VisualizerDirection::LeftAndRight => {
             let (left_mode, right_mode) = dual_side_modes(mode);
-            let left_bars = build_rendered_bars(
-                &values,
-                num_bars,
-                left_mode,
-                frequency_bias,
-                center_offset,
-                display_decay,
-                peak_norm,
-                sensitivity,
-                thresholds,
-                length_ranges,
-                true,
-                VerticalDualLength::Cap,
-            );
-            let right_bars = build_rendered_bars(
-                &values,
-                num_bars,
-                right_mode,
-                frequency_bias,
-                center_offset,
-                display_decay,
-                peak_norm,
-                sensitivity,
-                thresholds,
-                length_ranges,
-                true,
-                VerticalDualLength::Cap,
-            );
+            let left_bars = bars_for(left_mode, true, VerticalDualLength::Cap);
+            let right_bars = bars_for(right_mode, true, VerticalDualLength::Cap);
             // Edge-anchored: same reach as singular Left/Right across the full width.
             render_horizontal_right(
                 frame,
@@ -469,34 +453,8 @@ pub fn render_audio_visualization(
         }
         VisualizerDirection::CenterLeftAndRight => {
             let (left_mode, right_mode) = dual_side_modes(mode);
-            let left_bars = build_rendered_bars(
-                &values,
-                num_bars,
-                left_mode,
-                frequency_bias,
-                center_offset,
-                display_decay,
-                peak_norm,
-                sensitivity,
-                thresholds,
-                length_ranges,
-                true,
-                VerticalDualLength::None,
-            );
-            let right_bars = build_rendered_bars(
-                &values,
-                num_bars,
-                right_mode,
-                frequency_bias,
-                center_offset,
-                display_decay,
-                peak_norm,
-                sensitivity,
-                thresholds,
-                length_ranges,
-                true,
-                VerticalDualLength::None,
-            );
+            let left_bars = bars_for(left_mode, true, VerticalDualLength::None);
+            let right_bars = bars_for(right_mode, true, VerticalDualLength::None);
             let (left_rect, right_rect) = split_horizontal_center(rect);
             if left_rect.width > 0 {
                 render_horizontal_left(
@@ -527,34 +485,8 @@ pub fn render_audio_visualization(
         }
         VisualizerDirection::UpAndDown => {
             let (up_mode, down_mode) = dual_side_modes(mode);
-            let up_bars = build_rendered_bars(
-                &values,
-                num_bars,
-                up_mode,
-                frequency_bias,
-                center_offset,
-                display_decay,
-                peak_norm,
-                sensitivity,
-                thresholds,
-                length_ranges,
-                false,
-                VerticalDualLength::Cap,
-            );
-            let down_bars = build_rendered_bars(
-                &values,
-                num_bars,
-                down_mode,
-                frequency_bias,
-                center_offset,
-                display_decay,
-                peak_norm,
-                sensitivity,
-                thresholds,
-                length_ranges,
-                false,
-                VerticalDualLength::Cap,
-            );
+            let up_bars = bars_for(up_mode, false, VerticalDualLength::Cap);
+            let down_bars = bars_for(down_mode, false, VerticalDualLength::Cap);
             // Edge-anchored: Down first, then Up on top.
             render_vertical_down(
                 frame,
@@ -581,34 +513,8 @@ pub fn render_audio_visualization(
         }
         VisualizerDirection::CenterUpAndDown => {
             let (up_mode, down_mode) = dual_side_modes(mode);
-            let up_bars = build_rendered_bars(
-                &values,
-                num_bars,
-                up_mode,
-                frequency_bias,
-                center_offset,
-                display_decay,
-                peak_norm,
-                sensitivity,
-                thresholds,
-                length_ranges,
-                false,
-                VerticalDualLength::Boost,
-            );
-            let down_bars = build_rendered_bars(
-                &values,
-                num_bars,
-                down_mode,
-                frequency_bias,
-                center_offset,
-                display_decay,
-                peak_norm,
-                sensitivity,
-                thresholds,
-                length_ranges,
-                false,
-                VerticalDualLength::Boost,
-            );
+            let up_bars = bars_for(up_mode, false, VerticalDualLength::Boost);
+            let down_bars = bars_for(down_mode, false, VerticalDualLength::Boost);
             let (up_rect, down_rect) = split_vertical_center(rect);
             if up_rect.height > 0 {
                 render_vertical_up(
@@ -715,6 +621,8 @@ fn build_rendered_bars(
     ),
     horizontal: bool,
     vertical_dual_length: VerticalDualLength,
+    peak_reach: VisualizerPeakReach,
+    peak_spread: VisualizerPeakSpread,
 ) -> Vec<RenderedBar> {
     let (mid_threshold, high_threshold, peak_threshold) = thresholds;
     let (low_length_range, mid_length_range, high_length_range, peak_length_range) = length_ranges;
@@ -743,19 +651,18 @@ fn build_rendered_bars(
                 );
                 if horizontal {
                     length = soften_horizontal_bar_length(length);
-                    if matches!(vertical_dual_length, VerticalDualLength::Cap) {
-                        length = cap_edge_meet_bar_length(length);
-                    }
                 } else {
                     match vertical_dual_length {
-                        VerticalDualLength::None => {}
+                        VerticalDualLength::None | VerticalDualLength::Cap => {}
                         VerticalDualLength::Boost => {
                             length = boost_vertical_dual_bar_length(length);
                         }
-                        VerticalDualLength::Cap => {
-                            length = cap_edge_meet_bar_length(length);
-                        }
                     }
+                }
+                // Peak Reach overlay after Behavior mapping. Medium is an identity scale.
+                length = (length * peak_reach.length_scale()).clamp(0.0, 1.0);
+                if matches!(vertical_dual_length, VerticalDualLength::Cap) {
+                    length = cap_edge_meet_bar_length(length, peak_reach);
                 }
 
                 RenderedBar { length, intensity }
@@ -763,7 +670,7 @@ fn build_rendered_bars(
             .collect();
 
     if horizontal {
-        soften_horizontal_bar_slope(&mut bars);
+        soften_horizontal_bar_slope(&mut bars, peak_spread.slope_passes());
     }
 
     bars
@@ -1232,24 +1139,31 @@ fn boost_vertical_dual_bar_length(length: f32) -> f32 {
 }
 
 // Edge duals that grow toward each other; keep quieter bars, cap peaks so they don't cross.
-fn cap_edge_meet_bar_length(length: f32) -> f32 {
+// Medium keeps the current remap. Far clips near the midline so loud bars can get close.
+fn cap_edge_meet_bar_length(length: f32, peak_reach: VisualizerPeakReach) -> f32 {
     let length = length.clamp(0.0, 1.0);
     const KEEP: f32 = 0.22;
-    const MAX: f32 = 0.47;
-    if length <= KEEP {
-        length
-    } else {
-        KEEP + (length - KEEP) / (1.0 - KEEP) * (MAX - KEEP)
+    let max = peak_reach.meet_cap_max();
+    match peak_reach {
+        VisualizerPeakReach::Far => length.min(max),
+        VisualizerPeakReach::Shallow | VisualizerPeakReach::Medium => {
+            if length <= KEEP {
+                length
+            } else {
+                KEEP + (length - KEEP) / (1.0 - KEEP) * (max - KEEP)
+            }
+        }
     }
 }
 
 // Blend neighboring Left/Right lengths so peaks fall off as a slope, not a cliff.
-fn soften_horizontal_bar_slope(bars: &mut [RenderedBar]) {
+fn soften_horizontal_bar_slope(bars: &mut [RenderedBar], passes: usize) {
     if bars.len() < 2 {
         return;
     }
 
-    for _ in 0..2 {
+    let passes = passes.max(1);
+    for _ in 0..passes {
         let lengths: Vec<f32> = bars.iter().map(|bar| bar.length).collect();
         for (i, bar) in bars.iter_mut().enumerate() {
             let mut sum = lengths[i] * 2.0;

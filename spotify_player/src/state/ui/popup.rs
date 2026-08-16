@@ -1,6 +1,6 @@
 use crate::{
     command,
-    config::{VisualizerDirection, VisualizerMode},
+    config::{VisualizerDirection, VisualizerMode, VisualizerPeakReach, VisualizerPeakSpread},
     state::{
         model::{Album, Artist, Episode, EpisodeId, Playlist, Show, Track, TrackId},
         ItemId,
@@ -47,6 +47,8 @@ pub enum PopupState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VisualizerMenuColumn {
     Behavior,
+    PeakReach,
+    PeakSpread,
     Look,
     Mode,
     Direction,
@@ -59,6 +61,8 @@ pub struct VisualizerMenuState {
     pub original_visualizer: crate::config::VisualizerPreset,
     pub focus: VisualizerMenuColumn,
     pub behavior_state: ListState,
+    pub peak_reach_state: ListState,
+    pub peak_spread_state: ListState,
     pub look_state: ListState,
     pub placement_state: ListState,
     pub mode_state: ListState,
@@ -172,6 +176,8 @@ impl VisualizerMenuState {
             original_visualizer,
             focus: VisualizerMenuColumn::Behavior,
             behavior_state: ListState::default(),
+            peak_reach_state: ListState::default(),
+            peak_spread_state: ListState::default(),
             look_state: ListState::default(),
             placement_state: ListState::default(),
             mode_state: ListState::default(),
@@ -202,6 +208,20 @@ impl VisualizerMenuState {
             .placement_presets
             .iter()
             .map(|preset| preset.name.clone())
+            .collect()
+    }
+
+    pub fn peak_reach_items(&self) -> Vec<String> {
+        VisualizerPeakReach::ALL
+            .iter()
+            .map(|reach| reach.as_menu_label().to_string())
+            .collect()
+    }
+
+    pub fn peak_spread_items(&self) -> Vec<String> {
+        VisualizerPeakSpread::ALL
+            .iter()
+            .map(|spread| spread.as_menu_label().to_string())
             .collect()
     }
 
@@ -276,7 +296,9 @@ impl VisualizerMenuState {
 
     pub fn focus_next(&mut self) {
         self.focus = match self.focus {
-            VisualizerMenuColumn::Behavior => VisualizerMenuColumn::Look,
+            VisualizerMenuColumn::Behavior => VisualizerMenuColumn::PeakReach,
+            VisualizerMenuColumn::PeakReach => VisualizerMenuColumn::PeakSpread,
+            VisualizerMenuColumn::PeakSpread => VisualizerMenuColumn::Look,
             VisualizerMenuColumn::Look => VisualizerMenuColumn::Mode,
             VisualizerMenuColumn::Mode => VisualizerMenuColumn::Direction,
             VisualizerMenuColumn::Direction => VisualizerMenuColumn::Placement,
@@ -287,7 +309,9 @@ impl VisualizerMenuState {
     pub fn focus_previous(&mut self) {
         self.focus = match self.focus {
             VisualizerMenuColumn::Behavior => VisualizerMenuColumn::Placement,
-            VisualizerMenuColumn::Look => VisualizerMenuColumn::Behavior,
+            VisualizerMenuColumn::PeakReach => VisualizerMenuColumn::Behavior,
+            VisualizerMenuColumn::PeakSpread => VisualizerMenuColumn::PeakReach,
+            VisualizerMenuColumn::Look => VisualizerMenuColumn::PeakSpread,
             VisualizerMenuColumn::Mode => VisualizerMenuColumn::Look,
             VisualizerMenuColumn::Direction => VisualizerMenuColumn::Mode,
             VisualizerMenuColumn::Placement => VisualizerMenuColumn::Direction,
@@ -390,8 +414,18 @@ impl VisualizerMenuState {
             .iter()
             .position(|direction| *direction == self.config.active.visualizer_direction)
             .unwrap_or_default();
+        let reach_id = VisualizerPeakReach::ALL
+            .iter()
+            .position(|reach| *reach == self.config.active.visualizer_peak_reach)
+            .unwrap_or(1);
+        let spread_id = VisualizerPeakSpread::ALL
+            .iter()
+            .position(|spread| *spread == self.config.active.visualizer_peak_spread)
+            .unwrap_or(1);
 
         self.behavior_state.select(Some(behavior_id));
+        self.peak_reach_state.select(Some(reach_id));
+        self.peak_spread_state.select(Some(spread_id));
         self.look_state.select(Some(look_id));
         self.placement_state.select(Some(placement_id));
         self.direction_state.select(Some(direction_id));
@@ -402,6 +436,16 @@ impl VisualizerMenuState {
         if let Some(id) = self.behavior_state.selected() {
             if let Some(preset) = self.config.behavior_presets.get(id) {
                 self.config.active.behavior_preset = preset.name.clone();
+            }
+        }
+        if let Some(id) = self.peak_reach_state.selected() {
+            if let Some(reach) = VisualizerPeakReach::ALL.get(id) {
+                self.config.active.visualizer_peak_reach = *reach;
+            }
+        }
+        if let Some(id) = self.peak_spread_state.selected() {
+            if let Some(spread) = VisualizerPeakSpread::ALL.get(id) {
+                self.config.active.visualizer_peak_spread = *spread;
             }
         }
         if let Some(id) = self.look_state.selected() {
@@ -437,6 +481,8 @@ impl VisualizerMenuState {
     fn focus_len(&self) -> usize {
         match self.focus {
             VisualizerMenuColumn::Behavior => self.config.behavior_presets.len(),
+            VisualizerMenuColumn::PeakReach => VisualizerPeakReach::ALL.len(),
+            VisualizerMenuColumn::PeakSpread => VisualizerPeakSpread::ALL.len(),
             VisualizerMenuColumn::Look => self.config.look_presets.len(),
             VisualizerMenuColumn::Placement => self.config.placement_presets.len(),
             VisualizerMenuColumn::Mode => self.mode_choices().len(),
@@ -447,6 +493,8 @@ impl VisualizerMenuState {
     fn focus_selected(&self) -> Option<usize> {
         match self.focus {
             VisualizerMenuColumn::Behavior => self.behavior_state.selected(),
+            VisualizerMenuColumn::PeakReach => self.peak_reach_state.selected(),
+            VisualizerMenuColumn::PeakSpread => self.peak_spread_state.selected(),
             VisualizerMenuColumn::Look => self.look_state.selected(),
             VisualizerMenuColumn::Placement => self.placement_state.selected(),
             VisualizerMenuColumn::Mode => self.mode_state.selected(),
@@ -457,6 +505,8 @@ impl VisualizerMenuState {
     fn focus_state_mut(&mut self) -> &mut ListState {
         match self.focus {
             VisualizerMenuColumn::Behavior => &mut self.behavior_state,
+            VisualizerMenuColumn::PeakReach => &mut self.peak_reach_state,
+            VisualizerMenuColumn::PeakSpread => &mut self.peak_spread_state,
             VisualizerMenuColumn::Look => &mut self.look_state,
             VisualizerMenuColumn::Placement => &mut self.placement_state,
             VisualizerMenuColumn::Mode => &mut self.mode_state,

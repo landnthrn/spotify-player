@@ -250,11 +250,13 @@ fn render_visualizer_menu_popup(
     let outer = construct_and_render_block("Visualizer Settings", theme, Borders::ALL, frame, rect);
     let chunks = Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).split(outer);
     let columns = Layout::horizontal([
+        Constraint::Percentage(12),
+        Constraint::Percentage(12),
+        Constraint::Percentage(12),
+        Constraint::Percentage(12),
+        Constraint::Percentage(18),
+        Constraint::Percentage(18),
         Constraint::Percentage(16),
-        Constraint::Percentage(16),
-        Constraint::Percentage(24),
-        Constraint::Percentage(22),
-        Constraint::Percentage(22),
     ])
     .spacing(1)
     .split(chunks[0]);
@@ -272,6 +274,24 @@ fn render_visualizer_menu_popup(
         frame,
         theme,
         columns[1],
+        "Peak Reach",
+        menu.focus == VisualizerMenuColumn::PeakReach,
+        menu.peak_reach_items(),
+        &mut menu.peak_reach_state,
+    );
+    render_visualizer_menu_column(
+        frame,
+        theme,
+        columns[2],
+        "Peak Spread",
+        menu.focus == VisualizerMenuColumn::PeakSpread,
+        menu.peak_spread_items(),
+        &mut menu.peak_spread_state,
+    );
+    render_visualizer_menu_column(
+        frame,
+        theme,
+        columns[3],
         "Look",
         menu.focus == VisualizerMenuColumn::Look,
         menu.look_items(),
@@ -280,7 +300,7 @@ fn render_visualizer_menu_popup(
     render_visualizer_menu_column(
         frame,
         theme,
-        columns[2],
+        columns[4],
         "Mode",
         menu.focus == VisualizerMenuColumn::Mode,
         menu.mode_items(),
@@ -289,7 +309,7 @@ fn render_visualizer_menu_popup(
     render_visualizer_menu_column(
         frame,
         theme,
-        columns[3],
+        columns[5],
         "Direction",
         menu.focus == VisualizerMenuColumn::Direction,
         menu.direction_items(),
@@ -298,7 +318,7 @@ fn render_visualizer_menu_popup(
     render_visualizer_menu_column(
         frame,
         theme,
-        columns[4],
+        columns[6],
         "Placement",
         menu.focus == VisualizerMenuColumn::Placement,
         menu.placement_items(),

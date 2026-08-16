@@ -368,6 +368,11 @@ pub fn render_audio_visualization(
         return;
     }
 
+    let horizontal = matches!(
+        direction,
+        VisualizerDirection::Left | VisualizerDirection::Right
+    );
+
     let bars: Vec<RenderedBar> =
         shape_visualizer_values(&values, num_bars, mode, frequency_bias, center_offset)
             .into_iter()
@@ -375,7 +380,7 @@ pub fn render_audio_visualization(
                 let intensity = (((value * display_decay) / peak_norm) * sensitivity)
                     .clamp(0.0, 1.0)
                     .powf(0.5);
-                let length = normalized_length_for_intensity(
+                let mut length = normalized_length_for_intensity(
                     intensity,
                     mid_threshold,
                     high_threshold,
@@ -385,6 +390,9 @@ pub fn render_audio_visualization(
                     high_length_range,
                     peak_length_range,
                 );
+                if horizontal {
+                    length = soften_horizontal_bar_length(length);
+                }
 
                 RenderedBar { length, intensity }
             })
@@ -762,13 +770,13 @@ fn render_horizontal_left(
             let symbol = if col_offset < full_cols {
                 Some((block::FULL, color, bg))
             } else if col_offset == full_cols && partial_ticks > 0 {
-                Some(right_bar_cell(partial_ticks, color, bg))
+                left_tip_cell(partial_ticks, color, bg)
             } else {
                 None
             };
 
-            if let Some((glyph, fg, bg)) = symbol {
-                paint_row_cell(frame, x, cursor_y, bar_thickness, glyph, fg, bg);
+            if let Some((glyph, fg, cell_bg)) = symbol {
+                paint_row_cell(frame, x, cursor_y, bar_thickness, glyph, fg, cell_bg);
             }
         }
 
@@ -809,6 +817,19 @@ fn used_axis_span(num_bars: usize, bar_thickness: u16, bar_gap: u16) -> u16 {
 
 fn normalized_ticks(norm: f32, max_ticks: u32) -> u16 {
     (norm.clamp(0.0, 1.0) * max_ticks as f32).round() as u16
+}
+
+// Left/Right use few bars (one per row), so full preset peak lengths look oversized.
+// Compress only the upper length range; Up/Down never call this.
+fn soften_horizontal_bar_length(length: f32) -> f32 {
+    let length = length.clamp(0.0, 1.0);
+    const KEEP: f32 = 0.5;
+    const COMPRESS: f32 = 0.45;
+    if length <= KEEP {
+        length
+    } else {
+        KEEP + (length - KEEP) * COMPRESS
+    }
 }
 
 fn sanitize_thresholds(mid: f32, high: f32, peak: f32) -> (f32, f32, f32) {
@@ -903,6 +924,24 @@ fn left_bar_symbol(ticks: u16) -> &'static str {
         6 => block::THREE_QUARTERS,
         7 => block::SEVEN_EIGHTHS,
         _ => block::FULL,
+    }
+}
+
+fn left_tip_cell(
+    fill_ticks: u16,
+    color: Color,
+    background: Color,
+) -> Option<(&'static str, Color, Color)> {
+    // Color-swap tips break on Color::Reset (transparent themes). Use a normal
+    // right-half block past halfway, otherwise skip the fraction.
+    if matches!(background, Color::Reset) {
+        if fill_ticks >= 4 {
+            Some(("\u{2590}", color, background)) // ▐
+        } else {
+            None
+        }
+    } else {
+        Some(right_bar_cell(fill_ticks, color, background))
     }
 }
 

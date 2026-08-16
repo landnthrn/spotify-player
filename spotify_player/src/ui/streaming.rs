@@ -441,22 +441,22 @@ pub fn render_audio_visualization(
                 true,
             );
             // Edge-anchored: same reach as singular Left/Right across the full width.
-            render_horizontal_left(
+            render_horizontal_right(
                 frame,
                 rect,
                 theme,
-                &left_bars,
+                &right_bars,
                 bar_thickness,
                 bar_gap,
                 mid_threshold,
                 high_threshold,
                 peak_threshold,
             );
-            render_horizontal_right(
+            render_horizontal_left(
                 frame,
                 rect,
                 theme,
-                &right_bars,
+                &left_bars,
                 bar_thickness,
                 bar_gap,
                 mid_threshold,
@@ -548,23 +548,23 @@ pub fn render_audio_visualization(
                 length_ranges,
                 false,
             );
-            // Edge-anchored: same reach as singular Up/Down across the full height.
-            render_vertical_up(
+            // Edge-anchored: Down first, then Up on top so joins keep Up's normal cells.
+            render_vertical_down(
                 frame,
                 rect,
                 theme,
-                &up_bars,
+                &down_bars,
                 bar_thickness,
                 bar_gap,
                 mid_threshold,
                 high_threshold,
                 peak_threshold,
             );
-            render_vertical_down(
+            render_vertical_up(
                 frame,
                 rect,
                 theme,
-                &down_bars,
+                &up_bars,
                 bar_thickness,
                 bar_gap,
                 mid_threshold,
@@ -974,16 +974,19 @@ fn render_vertical_up(
         let mut remaining = ticks;
 
         for row_offset in (0..rect.height).rev() {
-            let symbol = bottom_bar_symbol(remaining.min(8));
-            paint_column_cell(
-                frame,
-                cursor_x,
-                row_offset + rect.y,
-                bar_thickness,
-                symbol,
-                color,
-                bg,
-            );
+            let fill = remaining.min(8);
+            if fill > 0 {
+                let symbol = bottom_bar_symbol(fill);
+                paint_column_cell(
+                    frame,
+                    cursor_x,
+                    row_offset + rect.y,
+                    bar_thickness,
+                    symbol,
+                    color,
+                    bg,
+                );
+            }
             remaining = remaining.saturating_sub(8);
         }
 
@@ -1072,16 +1075,19 @@ fn render_horizontal_right(
         let mut remaining = ticks;
 
         for col_offset in 0..rect.width {
-            let symbol = left_bar_symbol(remaining.min(8));
-            paint_row_cell(
-                frame,
-                rect.x + col_offset,
-                cursor_y,
-                bar_thickness,
-                symbol,
-                color,
-                bg,
-            );
+            let fill = remaining.min(8);
+            if fill > 0 {
+                let symbol = left_bar_symbol(fill);
+                paint_row_cell(
+                    frame,
+                    rect.x + col_offset,
+                    cursor_y,
+                    bar_thickness,
+                    symbol,
+                    color,
+                    bg,
+                );
+            }
             remaining = remaining.saturating_sub(8);
         }
 

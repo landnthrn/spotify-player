@@ -206,17 +206,72 @@ impl VisualizerMenuState {
     }
 
     pub fn mode_items(&self) -> Vec<String> {
-        VisualizerMode::ALL
-            .iter()
-            .map(|mode| mode.as_config_value().to_string())
+        self.mode_choices()
+            .into_iter()
+            .map(|mode| mode.as_menu_label().to_string())
             .collect()
     }
 
     pub fn direction_items(&self) -> Vec<String> {
         VisualizerDirection::ALL
             .iter()
-            .map(|direction| direction.as_config_value().to_string())
+            .map(|direction| direction.as_menu_label().to_string())
             .collect()
+    }
+
+    pub fn highlighted_direction(&self) -> VisualizerDirection {
+        self.direction_state
+            .selected()
+            .and_then(|id| VisualizerDirection::ALL.get(id).copied())
+            .unwrap_or(VisualizerDirection::Up)
+    }
+
+    fn mode_choices(&self) -> Vec<VisualizerMode> {
+        VisualizerMode::menu_items(self.highlighted_direction().is_dual())
+    }
+
+    fn mode_from_state(&self) -> VisualizerMode {
+        self.mode_state
+            .selected()
+            .and_then(|id| self.mode_choices().get(id).copied())
+            .unwrap_or(self.config.active.visualizer_mode)
+    }
+
+    fn reconcile_mode_selection(&mut self) {
+        let choices = self.mode_choices();
+        if choices.is_empty() {
+            return;
+        }
+
+        let mut mode = self.config.active.visualizer_mode;
+        if mode.is_dual_only() && !self.highlighted_direction().is_dual() {
+            mode = VisualizerMode::LeftBass;
+            self.config.active.visualizer_mode = mode;
+        }
+
+        let mode_id = choices
+            .iter()
+            .position(|choice| *choice == mode)
+            .unwrap_or_else(|| {
+                choices
+                    .iter()
+                    .position(|choice| *choice == VisualizerMode::LeftBass)
+                    .unwrap_or(0)
+            });
+        if !choices.iter().any(|choice| *choice == mode) {
+            self.config.active.visualizer_mode = choices[mode_id];
+        }
+        self.mode_state.select(Some(mode_id));
+    }
+
+    fn after_direction_change(&mut self, mode_before: VisualizerMode) {
+        self.config.active.visualizer_mode =
+            if mode_before.is_dual_only() && !self.highlighted_direction().is_dual() {
+                VisualizerMode::LeftBass
+            } else {
+                mode_before
+            };
+        self.reconcile_mode_selection();
     }
 
     pub fn focus_next(&mut self) {
@@ -240,6 +295,17 @@ impl VisualizerMenuState {
     }
 
     pub fn select_next(&mut self) {
+        if self.focus == VisualizerMenuColumn::Direction {
+            let mode_before = self.mode_from_state();
+            let len = self.focus_len();
+            let current = self.focus_selected().unwrap_or_default();
+            if current + 1 < len {
+                self.focus_state_mut().select(Some(current + 1));
+            }
+            self.after_direction_change(mode_before);
+            return;
+        }
+
         let len = self.focus_len();
         let current = self.focus_selected().unwrap_or_default();
         if current + 1 < len {
@@ -248,6 +314,16 @@ impl VisualizerMenuState {
     }
 
     pub fn select_previous(&mut self) {
+        if self.focus == VisualizerMenuColumn::Direction {
+            let mode_before = self.mode_from_state();
+            let current = self.focus_selected().unwrap_or_default();
+            if current > 0 {
+                self.focus_state_mut().select(Some(current - 1));
+            }
+            self.after_direction_change(mode_before);
+            return;
+        }
+
         let current = self.focus_selected().unwrap_or_default();
         if current > 0 {
             self.focus_state_mut().select(Some(current - 1));
@@ -255,12 +331,31 @@ impl VisualizerMenuState {
     }
 
     pub fn select_first(&mut self) {
+        if self.focus == VisualizerMenuColumn::Direction {
+            let mode_before = self.mode_from_state();
+            if self.focus_len() > 0 {
+                self.focus_state_mut().select(Some(0));
+            }
+            self.after_direction_change(mode_before);
+            return;
+        }
+
         if self.focus_len() > 0 {
             self.focus_state_mut().select(Some(0));
         }
     }
 
     pub fn select_last(&mut self) {
+        if self.focus == VisualizerMenuColumn::Direction {
+            let mode_before = self.mode_from_state();
+            let len = self.focus_len();
+            if len > 0 {
+                self.focus_state_mut().select(Some(len - 1));
+            }
+            self.after_direction_change(mode_before);
+            return;
+        }
+
         let len = self.focus_len();
         if len > 0 {
             self.focus_state_mut().select(Some(len - 1));
@@ -291,10 +386,6 @@ impl VisualizerMenuState {
             .iter()
             .position(|preset| preset.name == self.config.active.placement_preset)
             .unwrap_or_default();
-        let mode_id = VisualizerMode::ALL
-            .iter()
-            .position(|mode| *mode == self.config.active.visualizer_mode)
-            .unwrap_or_default();
         let direction_id = VisualizerDirection::ALL
             .iter()
             .position(|direction| *direction == self.config.active.visualizer_direction)
@@ -303,8 +394,8 @@ impl VisualizerMenuState {
         self.behavior_state.select(Some(behavior_id));
         self.look_state.select(Some(look_id));
         self.placement_state.select(Some(placement_id));
-        self.mode_state.select(Some(mode_id));
         self.direction_state.select(Some(direction_id));
+        self.reconcile_mode_selection();
     }
 
     fn sync_active_from_selections(&mut self) {
@@ -323,16 +414,24 @@ impl VisualizerMenuState {
                 self.config.active.placement_preset = preset.name.clone();
             }
         }
-        if let Some(id) = self.mode_state.selected() {
-            if let Some(mode) = VisualizerMode::ALL.get(id) {
-                self.config.active.visualizer_mode = *mode;
-            }
-        }
         if let Some(id) = self.direction_state.selected() {
             if let Some(direction) = VisualizerDirection::ALL.get(id) {
                 self.config.active.visualizer_direction = *direction;
             }
         }
+
+        let choices = self.mode_choices();
+        if let Some(id) = self.mode_state.selected() {
+            if let Some(mode) = choices.get(id) {
+                self.config.active.visualizer_mode = *mode;
+            }
+        }
+        if self.config.active.visualizer_mode.is_dual_only()
+            && !self.config.active.visualizer_direction.is_dual()
+        {
+            self.config.active.visualizer_mode = VisualizerMode::LeftBass;
+        }
+        self.reconcile_mode_selection();
     }
 
     fn focus_len(&self) -> usize {
@@ -340,7 +439,7 @@ impl VisualizerMenuState {
             VisualizerMenuColumn::Behavior => self.config.behavior_presets.len(),
             VisualizerMenuColumn::Look => self.config.look_presets.len(),
             VisualizerMenuColumn::Placement => self.config.placement_presets.len(),
-            VisualizerMenuColumn::Mode => VisualizerMode::ALL.len(),
+            VisualizerMenuColumn::Mode => self.mode_choices().len(),
             VisualizerMenuColumn::Direction => VisualizerDirection::ALL.len(),
         }
     }

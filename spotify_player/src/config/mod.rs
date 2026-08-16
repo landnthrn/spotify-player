@@ -263,6 +263,10 @@ config_parser_impl!(ProgressBarPosition);
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum VisualizerMode {
+    #[serde(rename = "flipped_left_and_right")]
+    FlippedLeftAndRight,
+    #[serde(rename = "flipped_right_and_left")]
+    FlippedRightAndLeft,
     LeftBass,
     RightBass,
     CenterBass,
@@ -276,7 +280,7 @@ pub enum VisualizerMode {
 config_parser_impl!(VisualizerMode);
 
 impl VisualizerMode {
-    pub const ALL: [Self; 6] = [
+    pub const STANDARD: [Self; 6] = [
         Self::LeftBass,
         Self::RightBass,
         Self::CenterBass,
@@ -285,14 +289,42 @@ impl VisualizerMode {
         Self::MultiPeakLr,
     ];
 
+    pub const DUAL_ONLY: [Self; 2] = [Self::FlippedLeftAndRight, Self::FlippedRightAndLeft];
+
+    pub fn menu_items(dual_direction: bool) -> Vec<Self> {
+        if dual_direction {
+            Self::DUAL_ONLY
+                .iter()
+                .copied()
+                .chain(Self::STANDARD.iter().copied())
+                .collect()
+        } else {
+            Self::STANDARD.to_vec()
+        }
+    }
+
+    pub fn is_dual_only(self) -> bool {
+        matches!(self, Self::FlippedLeftAndRight | Self::FlippedRightAndLeft)
+    }
+
     pub fn as_config_value(self) -> &'static str {
         match self {
+            Self::FlippedLeftAndRight => "flipped_left_and_right",
+            Self::FlippedRightAndLeft => "flipped_right_and_left",
             Self::LeftBass => "left_bass",
             Self::RightBass => "right_bass",
             Self::CenterBass => "center_bass",
             Self::CenterMirrored => "center_mirrored",
             Self::MultiPeakLcr => "multi_peak_l_c_r",
             Self::MultiPeakLr => "multi_peak_l_r",
+        }
+    }
+
+    pub fn as_menu_label(self) -> &'static str {
+        match self {
+            Self::FlippedLeftAndRight => "flipped left & right",
+            Self::FlippedRightAndLeft => "flipped right & left",
+            other => other.as_config_value(),
         }
     }
 }
@@ -304,11 +336,26 @@ pub enum VisualizerDirection {
     Down,
     Left,
     Right,
+    #[serde(rename = "left_and_right")]
+    LeftAndRight,
+    #[serde(rename = "up_and_down")]
+    UpAndDown,
 }
 config_parser_impl!(VisualizerDirection);
 
 impl VisualizerDirection {
-    pub const ALL: [Self; 4] = [Self::Up, Self::Down, Self::Left, Self::Right];
+    pub const ALL: [Self; 6] = [
+        Self::Up,
+        Self::Down,
+        Self::Left,
+        Self::Right,
+        Self::LeftAndRight,
+        Self::UpAndDown,
+    ];
+
+    pub fn is_dual(self) -> bool {
+        matches!(self, Self::LeftAndRight | Self::UpAndDown)
+    }
 
     pub fn as_config_value(self) -> &'static str {
         match self {
@@ -316,6 +363,16 @@ impl VisualizerDirection {
             Self::Down => "down",
             Self::Left => "left",
             Self::Right => "right",
+            Self::LeftAndRight => "left_and_right",
+            Self::UpAndDown => "up_and_down",
+        }
+    }
+
+    pub fn as_menu_label(self) -> &'static str {
+        match self {
+            Self::LeftAndRight => "left & right",
+            Self::UpAndDown => "up & down",
+            other => other.as_config_value(),
         }
     }
 }

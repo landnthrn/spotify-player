@@ -250,11 +250,11 @@ fn render_visualizer_menu_popup(
     let outer = construct_and_render_block("Visualizer Settings", theme, Borders::ALL, frame, rect);
     let chunks = Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).split(outer);
     let columns = Layout::horizontal([
-        Constraint::Percentage(20),
-        Constraint::Percentage(20),
-        Constraint::Percentage(20),
-        Constraint::Percentage(10),
-        Constraint::Percentage(25),
+        Constraint::Percentage(18),
+        Constraint::Percentage(18),
+        Constraint::Percentage(24),
+        Constraint::Percentage(16),
+        Constraint::Percentage(24),
     ])
     .spacing(1)
     .split(chunks[0]);
@@ -311,10 +311,13 @@ fn render_visualizer_menu_popup(
         .and_then(|id| config::VisualizerDirection::ALL.get(id))
         .copied();
     let footer = match (theme.app().bg.is_none(), direction_highlighted) {
-        (true, Some(config::VisualizerDirection::Down)) => {
+        (true, Some(config::VisualizerDirection::Down | config::VisualizerDirection::UpAndDown)) => {
             "Down direction won't appear properly on a transparent theme, thank unicode.   r - refresh"
         }
-        (true, Some(config::VisualizerDirection::Left)) => {
+        (
+            true,
+            Some(config::VisualizerDirection::Left | config::VisualizerDirection::LeftAndRight),
+        ) => {
             "Left direction won't appear properly on a transparent theme, thank unicode.   r - refresh"
         }
         _ => "r - refresh",

@@ -355,26 +355,240 @@ pub fn render_audio_visualization(
     let values = guard.display_values;
     let peak_norm = guard.display_peak_envelope.max(1e-6);
     drop(guard);
-    let num_bars = match direction {
-        VisualizerDirection::Up | VisualizerDirection::Down => {
-            visible_bar_count(rect.width, bar_thickness, bar_gap)
-        }
-        VisualizerDirection::Left | VisualizerDirection::Right => {
-            visible_bar_count(rect.height, bar_thickness, bar_gap)
-        }
-    };
 
+    let bar_axis_len = match direction {
+        VisualizerDirection::Up | VisualizerDirection::Down | VisualizerDirection::UpAndDown => {
+            rect.width
+        }
+        VisualizerDirection::Left
+        | VisualizerDirection::Right
+        | VisualizerDirection::LeftAndRight => rect.height,
+    };
+    let num_bars = visible_bar_count(bar_axis_len, bar_thickness, bar_gap);
     if num_bars == 0 {
         return;
     }
 
-    let horizontal = matches!(
-        direction,
-        VisualizerDirection::Left | VisualizerDirection::Right
+    let thresholds = (mid_threshold, high_threshold, peak_threshold);
+    let length_ranges = (
+        low_length_range,
+        mid_length_range,
+        high_length_range,
+        peak_length_range,
     );
 
+    match direction {
+        VisualizerDirection::Up
+        | VisualizerDirection::Down
+        | VisualizerDirection::Left
+        | VisualizerDirection::Right => {
+            let horizontal = matches!(
+                direction,
+                VisualizerDirection::Left | VisualizerDirection::Right
+            );
+            let bars = build_rendered_bars(
+                &values,
+                num_bars,
+                mode,
+                frequency_bias,
+                center_offset,
+                display_decay,
+                peak_norm,
+                sensitivity,
+                thresholds,
+                length_ranges,
+                horizontal,
+            );
+            render_single_direction(
+                frame,
+                direction,
+                rect,
+                theme,
+                &bars,
+                bar_thickness,
+                bar_gap,
+                thresholds,
+            );
+        }
+        VisualizerDirection::LeftAndRight => {
+            let (left_mode, right_mode) = dual_side_modes(mode);
+            let left_bars = build_rendered_bars(
+                &values,
+                num_bars,
+                left_mode,
+                frequency_bias,
+                center_offset,
+                display_decay,
+                peak_norm,
+                sensitivity,
+                thresholds,
+                length_ranges,
+                true,
+            );
+            let right_bars = build_rendered_bars(
+                &values,
+                num_bars,
+                right_mode,
+                frequency_bias,
+                center_offset,
+                display_decay,
+                peak_norm,
+                sensitivity,
+                thresholds,
+                length_ranges,
+                true,
+            );
+            let mid = rect.width / 2;
+            let left_rect = Rect {
+                x: rect.x,
+                y: rect.y,
+                width: mid,
+                height: rect.height,
+            };
+            let right_rect = Rect {
+                x: rect.x.saturating_add(mid),
+                y: rect.y,
+                width: rect.width.saturating_sub(mid),
+                height: rect.height,
+            };
+            if left_rect.width > 0 {
+                render_horizontal_left(
+                    frame,
+                    left_rect,
+                    theme,
+                    &left_bars,
+                    bar_thickness,
+                    bar_gap,
+                    mid_threshold,
+                    high_threshold,
+                    peak_threshold,
+                );
+            }
+            if right_rect.width > 0 {
+                render_horizontal_right(
+                    frame,
+                    right_rect,
+                    theme,
+                    &right_bars,
+                    bar_thickness,
+                    bar_gap,
+                    mid_threshold,
+                    high_threshold,
+                    peak_threshold,
+                );
+            }
+        }
+        VisualizerDirection::UpAndDown => {
+            let (up_mode, down_mode) = dual_side_modes(mode);
+            let up_bars = build_rendered_bars(
+                &values,
+                num_bars,
+                up_mode,
+                frequency_bias,
+                center_offset,
+                display_decay,
+                peak_norm,
+                sensitivity,
+                thresholds,
+                length_ranges,
+                false,
+            );
+            let down_bars = build_rendered_bars(
+                &values,
+                num_bars,
+                down_mode,
+                frequency_bias,
+                center_offset,
+                display_decay,
+                peak_norm,
+                sensitivity,
+                thresholds,
+                length_ranges,
+                false,
+            );
+            let mid = rect.height / 2;
+            let up_rect = Rect {
+                x: rect.x,
+                y: rect.y.saturating_add(mid),
+                width: rect.width,
+                height: rect.height.saturating_sub(mid),
+            };
+            let down_rect = Rect {
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: mid,
+            };
+            if up_rect.height > 0 {
+                render_vertical_up(
+                    frame,
+                    up_rect,
+                    theme,
+                    &up_bars,
+                    bar_thickness,
+                    bar_gap,
+                    mid_threshold,
+                    high_threshold,
+                    peak_threshold,
+                );
+            }
+            if down_rect.height > 0 {
+                render_vertical_down(
+                    frame,
+                    down_rect,
+                    theme,
+                    &down_bars,
+                    bar_thickness,
+                    bar_gap,
+                    mid_threshold,
+                    high_threshold,
+                    peak_threshold,
+                );
+            }
+        }
+    }
+}
+
+fn dual_side_modes(mode: VisualizerMode) -> (VisualizerMode, VisualizerMode) {
+    match mode {
+        VisualizerMode::FlippedLeftAndRight => {
+            (VisualizerMode::LeftBass, VisualizerMode::RightBass)
+        }
+        VisualizerMode::FlippedRightAndLeft => {
+            (VisualizerMode::RightBass, VisualizerMode::LeftBass)
+        }
+        other => (other, other),
+    }
+}
+
+fn build_rendered_bars(
+    values: &[f32; NUM_BANDS],
+    num_bars: usize,
+    mode: VisualizerMode,
+    frequency_bias: f32,
+    center_offset: i16,
+    display_decay: f32,
+    peak_norm: f32,
+    sensitivity: f32,
+    thresholds: (f32, f32, f32),
+    length_ranges: (
+        VisualizerLengthRange,
+        VisualizerLengthRange,
+        VisualizerLengthRange,
+        VisualizerLengthRange,
+    ),
+    horizontal: bool,
+) -> Vec<RenderedBar> {
+    let (mid_threshold, high_threshold, peak_threshold) = thresholds;
+    let (low_length_range, mid_length_range, high_length_range, peak_length_range) = length_ranges;
+    let mode = if mode.is_dual_only() {
+        VisualizerMode::LeftBass
+    } else {
+        mode
+    };
+
     let mut bars: Vec<RenderedBar> =
-        shape_visualizer_values(&values, num_bars, mode, frequency_bias, center_offset)
+        shape_visualizer_values(values, num_bars, mode, frequency_bias, center_offset)
             .into_iter()
             .map(|value| {
                 let intensity = (((value * display_decay) / peak_norm) * sensitivity)
@@ -402,12 +616,26 @@ pub fn render_audio_visualization(
         soften_horizontal_bar_slope(&mut bars);
     }
 
+    bars
+}
+
+fn render_single_direction(
+    frame: &mut Frame,
+    direction: VisualizerDirection,
+    rect: Rect,
+    theme: &Theme,
+    bars: &[RenderedBar],
+    bar_thickness: u16,
+    bar_gap: u16,
+    thresholds: (f32, f32, f32),
+) {
+    let (mid_threshold, high_threshold, peak_threshold) = thresholds;
     match direction {
         VisualizerDirection::Up => render_vertical_up(
             frame,
             rect,
             theme,
-            &bars,
+            bars,
             bar_thickness,
             bar_gap,
             mid_threshold,
@@ -418,7 +646,7 @@ pub fn render_audio_visualization(
             frame,
             rect,
             theme,
-            &bars,
+            bars,
             bar_thickness,
             bar_gap,
             mid_threshold,
@@ -429,7 +657,7 @@ pub fn render_audio_visualization(
             frame,
             rect,
             theme,
-            &bars,
+            bars,
             bar_thickness,
             bar_gap,
             mid_threshold,
@@ -440,13 +668,14 @@ pub fn render_audio_visualization(
             frame,
             rect,
             theme,
-            &bars,
+            bars,
             bar_thickness,
             bar_gap,
             mid_threshold,
             high_threshold,
             peak_threshold,
         ),
+        VisualizerDirection::LeftAndRight | VisualizerDirection::UpAndDown => {}
     }
 }
 
@@ -460,7 +689,9 @@ fn shape_visualizer_values(
     let base = sample_visualizer_values(values, num_bars, frequency_bias);
 
     match mode {
-        VisualizerMode::LeftBass => base,
+        VisualizerMode::LeftBass
+        | VisualizerMode::FlippedLeftAndRight
+        | VisualizerMode::FlippedRightAndLeft => base,
         VisualizerMode::RightBass => reverse_values(base),
         VisualizerMode::CenterBass => center_out_map(base, center_offset),
         VisualizerMode::CenterMirrored => center_mirrored_map(&base, center_offset),

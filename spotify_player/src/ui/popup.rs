@@ -356,14 +356,22 @@ fn render_visualizer_menu_column(
         title.to_string()
     };
     let inner = construct_and_render_block(&title, theme, Borders::ALL, frame, rect);
+    let inner = utils::inset_rect(inner, 1, 1, 0, 0);
     let selected_index = state.selected();
-    let (list, len) = utils::construct_list_widget(
-        theme,
-        items.into_iter().map(|item| (item, false)).collect(),
-        true,
-        selected_index,
-    );
-    utils::render_list_window(frame, list, inner, len, state);
+    let items = items
+        .into_iter()
+        .enumerate()
+        .map(|(i, item)| {
+            let style = if Some(i) == selected_index {
+                theme.selection(is_focused)
+            } else {
+                ratatui::style::Style::default()
+            };
+            ratatui::widgets::ListItem::new(item).style(style)
+        })
+        .collect::<Vec<_>>();
+    frame.render_widget(ratatui::widgets::List::new(items), inner);
+    *state.offset_mut() = 0;
 }
 
 /// A helper function to render a list popup

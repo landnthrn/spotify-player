@@ -427,7 +427,7 @@ pub fn render_audio_visualization(
                 thresholds,
                 length_ranges,
                 true,
-                VerticalDualLength::None,
+                VerticalDualLength::Cap,
             );
             let right_bars = build_rendered_bars(
                 &values,
@@ -441,7 +441,7 @@ pub fn render_audio_visualization(
                 thresholds,
                 length_ranges,
                 true,
-                VerticalDualLength::None,
+                VerticalDualLength::Cap,
             );
             // Edge-anchored: same reach as singular Left/Right across the full width.
             render_horizontal_right(
@@ -743,6 +743,9 @@ fn build_rendered_bars(
                 );
                 if horizontal {
                     length = soften_horizontal_bar_length(length);
+                    if matches!(vertical_dual_length, VerticalDualLength::Cap) {
+                        length = cap_edge_meet_bar_length(length);
+                    }
                 } else {
                     match vertical_dual_length {
                         VerticalDualLength::None => {}
@@ -750,7 +753,7 @@ fn build_rendered_bars(
                             length = boost_vertical_dual_bar_length(length);
                         }
                         VerticalDualLength::Cap => {
-                            length = cap_edge_up_down_bar_length(length);
+                            length = cap_edge_meet_bar_length(length);
                         }
                     }
                 }
@@ -1228,8 +1231,8 @@ fn boost_vertical_dual_bar_length(length: f32) -> f32 {
     length.clamp(0.0, 1.0).powf(0.72)
 }
 
-// Edge up & down grow toward each other; keep quieter bars, cap peaks so they don't cross.
-fn cap_edge_up_down_bar_length(length: f32) -> f32 {
+// Edge duals that grow toward each other; keep quieter bars, cap peaks so they don't cross.
+fn cap_edge_meet_bar_length(length: f32) -> f32 {
     let length = length.clamp(0.0, 1.0);
     const KEEP: f32 = 0.22;
     const MAX: f32 = 0.47;

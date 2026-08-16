@@ -659,7 +659,7 @@ fn build_rendered_bars(
                         }
                     }
                 }
-                // Peak Reach overlay after Behavior mapping. Medium is an identity scale.
+                // Peak Reach overlay after Behavior mapping.
                 length = (length * peak_reach.length_scale()).clamp(0.0, 1.0);
                 if matches!(vertical_dual_length, VerticalDualLength::Cap) {
                     length = cap_edge_meet_bar_length(length, peak_reach);
@@ -669,9 +669,7 @@ fn build_rendered_bars(
             })
             .collect();
 
-    if horizontal {
-        soften_horizontal_bar_slope(&mut bars, peak_spread.slope_passes());
-    }
+    apply_peak_spread(&mut bars, peak_spread);
 
     bars
 }
@@ -1139,14 +1137,14 @@ fn boost_vertical_dual_bar_length(length: f32) -> f32 {
 }
 
 // Edge duals that grow toward each other; keep quieter bars, cap peaks so they don't cross.
-// Medium keeps the current remap. Far clips near the midline so loud bars can get close.
+// Medium keeps a remap. High clips near the midline so loud bars can get close.
 fn cap_edge_meet_bar_length(length: f32, peak_reach: VisualizerPeakReach) -> f32 {
     let length = length.clamp(0.0, 1.0);
     const KEEP: f32 = 0.22;
     let max = peak_reach.meet_cap_max();
     match peak_reach {
-        VisualizerPeakReach::Far => length.min(max),
-        VisualizerPeakReach::Shallow | VisualizerPeakReach::Medium => {
+        VisualizerPeakReach::High => length.min(max),
+        VisualizerPeakReach::Low | VisualizerPeakReach::Medium => {
             if length <= KEEP {
                 length
             } else {
@@ -1156,25 +1154,49 @@ fn cap_edge_meet_bar_length(length: f32, peak_reach: VisualizerPeakReach) -> f32
     }
 }
 
-// Blend neighboring Left/Right lengths so peaks fall off as a slope, not a cliff.
-fn soften_horizontal_bar_slope(bars: &mut [RenderedBar], passes: usize) {
+// Widen or tighten how a peak falls into neighboring bars. Medium keeps the original slope.
+fn apply_peak_spread(bars: &mut [RenderedBar], spread: VisualizerPeakSpread) {
     if bars.len() < 2 {
         return;
     }
 
-    let passes = passes.max(1);
-    for _ in 0..passes {
+    let (bleed_passes, bleed, radius, blur_passes, self_weight, neighbor_weight) = match spread {
+        VisualizerPeakSpread::Near => (1, 0.10, 1, 1, 5.0, 0.45),
+        VisualizerPeakSpread::Medium => (0, 0.0, 1, 2, 2.0, 1.0),
+        VisualizerPeakSpread::Far => (3, 0.40, 2, 3, 1.0, 1.15),
+    };
+
+    for _ in 0..bleed_passes {
         let lengths: Vec<f32> = bars.iter().map(|bar| bar.length).collect();
         for (i, bar) in bars.iter_mut().enumerate() {
-            let mut sum = lengths[i] * 2.0;
-            let mut weight = 2.0;
+            let mut raised = lengths[i];
+            for distance in 1..=radius {
+                let falloff = 1.0 / distance as f32;
+                if i >= distance {
+                    let gap = (lengths[i - distance] - lengths[i]).max(0.0);
+                    raised = raised.max(lengths[i] + gap * bleed * falloff);
+                }
+                if i + distance < lengths.len() {
+                    let gap = (lengths[i + distance] - lengths[i]).max(0.0);
+                    raised = raised.max(lengths[i] + gap * bleed * falloff);
+                }
+            }
+            bar.length = raised.clamp(0.0, 1.0);
+        }
+    }
+
+    for _ in 0..blur_passes.max(1) {
+        let lengths: Vec<f32> = bars.iter().map(|bar| bar.length).collect();
+        for (i, bar) in bars.iter_mut().enumerate() {
+            let mut sum = lengths[i] * self_weight;
+            let mut weight = self_weight;
             if i > 0 {
-                sum += lengths[i - 1];
-                weight += 1.0;
+                sum += lengths[i - 1] * neighbor_weight;
+                weight += neighbor_weight;
             }
             if i + 1 < lengths.len() {
-                sum += lengths[i + 1];
-                weight += 1.0;
+                sum += lengths[i + 1] * neighbor_weight;
+                weight += neighbor_weight;
             }
             bar.length = sum / weight;
         }

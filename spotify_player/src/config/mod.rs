@@ -393,21 +393,23 @@ impl VisualizerDirection {
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum VisualizerPeakReach {
-    Shallow,
+    #[serde(alias = "shallow")]
+    Low,
     #[default]
     Medium,
-    Far,
+    #[serde(alias = "far")]
+    High,
 }
 config_parser_impl!(VisualizerPeakReach);
 
 impl VisualizerPeakReach {
-    pub const ALL: [Self; 3] = [Self::Shallow, Self::Medium, Self::Far];
+    pub const ALL: [Self; 3] = [Self::Low, Self::Medium, Self::High];
 
     pub fn as_config_value(self) -> &'static str {
         match self {
-            Self::Shallow => "shallow",
+            Self::Low => "low",
             Self::Medium => "medium",
-            Self::Far => "far",
+            Self::High => "high",
         }
     }
 
@@ -417,17 +419,17 @@ impl VisualizerPeakReach {
 
     pub fn length_scale(self) -> f32 {
         match self {
-            Self::Shallow => 0.75,
-            Self::Medium => 1.0,
-            Self::Far => 1.12,
+            Self::Low => 0.75,
+            Self::Medium => 0.90,
+            Self::High => 1.12,
         }
     }
 
     pub fn meet_cap_max(self) -> f32 {
         match self {
-            Self::Shallow => 0.34,
-            Self::Medium => 0.47,
-            Self::Far => 0.49,
+            Self::Low => 0.34,
+            Self::Medium => 0.44,
+            Self::High => 0.49,
         }
     }
 }
@@ -435,7 +437,8 @@ impl VisualizerPeakReach {
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum VisualizerPeakSpread {
-    Shallow,
+    #[serde(alias = "shallow")]
+    Near,
     #[default]
     Medium,
     Far,
@@ -443,11 +446,11 @@ pub enum VisualizerPeakSpread {
 config_parser_impl!(VisualizerPeakSpread);
 
 impl VisualizerPeakSpread {
-    pub const ALL: [Self; 3] = [Self::Shallow, Self::Medium, Self::Far];
+    pub const ALL: [Self; 3] = [Self::Near, Self::Medium, Self::Far];
 
     pub fn as_config_value(self) -> &'static str {
         match self {
-            Self::Shallow => "shallow",
+            Self::Near => "near",
             Self::Medium => "medium",
             Self::Far => "far",
         }
@@ -455,14 +458,6 @@ impl VisualizerPeakSpread {
 
     pub fn as_menu_label(self) -> &'static str {
         self.as_config_value()
-    }
-
-    pub fn slope_passes(self) -> usize {
-        match self {
-            Self::Shallow => 1,
-            Self::Medium => 2,
-            Self::Far => 3,
-        }
     }
 }
 

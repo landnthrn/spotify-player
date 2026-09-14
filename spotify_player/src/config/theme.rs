@@ -165,6 +165,25 @@ struct Palette {
     bright_yellow: Color,
 }
 
+#[cfg(feature = "streaming")]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[allow(dead_code)] // Parsed for upstream theme.toml compatibility; fork drawing uses `visualizer`.
+struct VisualizationStyle {
+    low: Option<StyleColor>,
+    mid: Option<StyleColor>,
+    high: Option<StyleColor>,
+}
+
+/// Amplitude-keyed colors resolved from a theme's `visualization` style.
+#[cfg(feature = "streaming")]
+#[derive(Clone, Debug)]
+#[allow(dead_code)] // Upstream 3-stop API; fork drawing uses `visualizer_colors()` (4-stop).
+pub struct VisualizationColors {
+    pub low: style::Color,
+    pub mid: style::Color,
+    pub high: style::Color,
+}
+
 #[derive(Clone, Debug, Default, Deserialize)]
 struct ComponentStyle {
     block_title: Option<Style>,
@@ -186,6 +205,9 @@ struct ComponentStyle {
     like: Option<Style>,
     lyrics_played: Option<Style>,
     lyrics_playing: Option<Style>,
+    #[cfg(feature = "streaming")]
+    #[allow(dead_code)] // Kept so upstream `visualization = { ... }` themes still parse.
+    visualization: Option<VisualizationStyle>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -503,6 +525,33 @@ impl Theme {
                     .modifiers([StyleModifier::Bold]),
             )
             .style(&self.palette)
+    }
+
+    /// Colors used by the audio visualization bars, keyed by amplitude.
+    /// Quiet bars use `low`, medium bars use `mid`, loud bars use `high`,
+    /// with a gradient between adjacent stops.
+    ///
+    /// The fork's drawing path uses [`Theme::visualizer_colors`] (4-stop) instead.
+    #[cfg(feature = "streaming")]
+    #[allow(dead_code)]
+    pub fn visualization(&self) -> VisualizationColors {
+        self.component_style
+            .visualization
+            .as_ref()
+            .unwrap_or(&VisualizationStyle::default())
+            .resolve(&self.palette)
+    }
+}
+
+#[cfg(feature = "streaming")]
+impl VisualizationStyle {
+    #[allow(dead_code)]
+    fn resolve(&self, palette: &Palette) -> VisualizationColors {
+        VisualizationColors {
+            low: self.low.unwrap_or(StyleColor::Blue).color(palette),
+            mid: self.mid.unwrap_or(StyleColor::Green).color(palette),
+            high: self.high.unwrap_or(StyleColor::Red).color(palette),
+        }
     }
 }
 

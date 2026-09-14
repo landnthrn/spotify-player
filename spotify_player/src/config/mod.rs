@@ -8,6 +8,7 @@ const APP_CONFIG_FILE: &str = "app.toml";
 const THEME_CONFIG_FILE: &str = "theme.toml";
 const KEYMAP_CONFIG_FILE: &str = "keymap.toml";
 const VISUALIZER_CONFIG_FILE: &str = "visualizer.toml";
+pub(crate) const DEFAULT_NCSPOT_ONLY_GET_ENDPOINTS: &[&str] = &["me/playlists", "playlists/"];
 
 use anyhow::{anyhow, Result};
 use config_parser2::{config_parser_impl, ConfigParse, ConfigParser};
@@ -71,6 +72,7 @@ pub struct AppConfig {
     pub theme: String,
     pub client_id: String,
     pub client_id_command: Option<Command>,
+    pub ncspot_only_get_endpoints: Vec<String>,
 
     pub client_port: u16,
 
@@ -91,6 +93,7 @@ pub struct AppConfig {
     pub notify_transient: bool,
 
     pub tracks_playback_limit: usize,
+    pub top_tracks_limit: usize,
 
     // session configs
     pub proxy: Option<String>,
@@ -99,6 +102,9 @@ pub struct AppConfig {
     // duration configs
     pub app_refresh_duration_in_ms: u64,
     pub playback_refresh_duration_in_ms: u64,
+
+    // Spotify Web API rate-limit retries
+    pub api_rate_limit_retries: usize,
 
     pub page_size_in_rows: usize,
 
@@ -657,6 +663,10 @@ impl Default for AppConfig {
             // [spotify API changes]: https://developer.spotify.com/blog/2024-11-27-changes-to-the-web-api
             client_id: NCSPOT_CLIENT_ID.to_string(),
             client_id_command: None,
+            ncspot_only_get_endpoints: DEFAULT_NCSPOT_ONLY_GET_ENDPOINTS
+                .iter()
+                .map(ToString::to_string)
+                .collect(),
 
             client_port: 8080,
 
@@ -665,6 +675,7 @@ impl Default for AppConfig {
             log_folder: None,
 
             tracks_playback_limit: 50,
+            top_tracks_limit: 100,
 
             playback_format: String::from(
                 "{status} {track} • {artists} {liked}\n{album} • {genres}\n{metadata}",
@@ -692,6 +703,7 @@ impl Default for AppConfig {
             ap_port: None,
             app_refresh_duration_in_ms: 32,
             playback_refresh_duration_in_ms: 0,
+            api_rate_limit_retries: 2,
 
             page_size_in_rows: 20,
 
@@ -790,7 +802,7 @@ impl Default for AppConfig {
             sort_artist_albums_by_type: false,
 
             volume_scroll_step: 5,
-            enable_mouse_scroll_volume: true,
+            enable_mouse_scroll_volume: false,
 
             custom_queue: true,
 

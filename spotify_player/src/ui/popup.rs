@@ -115,8 +115,23 @@ pub fn render_popup(
                 let rect = render_list_popup(frame, rect, "Devices", items, 5, ui);
                 (rect, false)
             }
-            PopupState::ThemeList { themes, .. } => {
-                let items = themes.iter().map(|t| (t.name.clone(), false)).collect();
+            PopupState::ThemeList {
+                themes,
+                original_theme,
+                ..
+            } => {
+                let current_name = original_theme.name.as_str();
+                let items = themes
+                    .iter()
+                    .map(|t| {
+                        let label = if t.name == current_name {
+                            format!("* {}", t.name)
+                        } else {
+                            t.name.clone()
+                        };
+                        (label, false)
+                    })
+                    .collect();
                 let outer = construct_and_render_block("Themes", &theme, Borders::ALL, frame, rect);
                 let chunks =
                     Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).split(outer);

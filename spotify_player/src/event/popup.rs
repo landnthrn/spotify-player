@@ -359,13 +359,25 @@ pub fn handle_key_sequence_for_popup(
                     };
                 },
                 |ui: &mut UIStateGuard, id| -> Result<()> {
-                    if let Some(PopupState::ThemeList { ref themes, .. }) = ui.popup {
-                        config::write_app_config_value(
-                            "theme",
-                            toml::Value::String(themes[id].name.clone()),
-                        )?;
+                    let theme_name = match ui.popup {
+                        Some(PopupState::ThemeList { ref themes, .. }) => {
+                            themes.get(id).map(|theme| theme.name.clone())
+                        }
+                        _ => None,
+                    };
+                    if let Some(theme_name) = theme_name {
+                        config::write_app_config_value("theme", toml::Value::String(theme_name))?;
                     }
-                    ui.popup = None;
+                    if let Some(PopupState::ThemeList {
+                        ref themes,
+                        original_theme,
+                        ..
+                    }) = ui.popup.as_mut()
+                    {
+                        if let Some(theme) = themes.get(id) {
+                            *original_theme = theme.clone();
+                        }
+                    }
                     Ok(())
                 },
                 |ui: &mut UIStateGuard| {
@@ -517,7 +529,6 @@ fn handle_command_for_visualizer_menu_popup(
         MenuOutcome::Persist(config_file, preview) => {
             ui.visualizer_preset = preview;
             config::write_visualizer_config_file(&config_file)?;
-            ui.popup = None;
             Ok(true)
         }
         MenuOutcome::Close(original) => {
